@@ -15,7 +15,7 @@ export const revisedPlan: PlanItem[] = [
 export const demoCopy = {
   objective: "Compare Supabase and Firebase for our startup.",
   acknowledgement: "I’ll compare the platforms and build a decision brief.",
-  interruption: "Use official sources. Prioritize compliance and pricing under $100.",
+  interruption: "Use official sources only. Prioritize compliance and pricing under $100.",
   revisionAcknowledgement: "Understood. I’ve stopped the broad search and narrowed the plan.",
   recommendation: "Supabase is the stronger fit for this brief. I’ve documented the evidence and trade-offs.",
 };

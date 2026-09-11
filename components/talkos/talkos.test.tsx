@@ -1,0 +1,81 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+import type { DemoController } from "@/features/demo/demo-controller";
+import { decisionBrief } from "@/features/session/session.fixtures";
+import { TalkOSApp, type ControllerFactory } from "./TalkOSApp";
+
+const at = "2026-09-12T12:00:00.000Z";
+
+const instantDemoController: ControllerFactory = (emit) => ({
+  start() {
+    emit({ type: "CONNECTION_CHANGED", connected: true, mode: "demo", at });
+    emit({
+      type: "ACTION_STARTED",
+      action: {
+        id: "search-initial",
+        label: "Scanning the open web",
+        detail: "Broad comparison",
+        status: "active",
+        at,
+      },
+      at,
+    });
+  },
+  interrupt(constraint = "Use official sources only") {
+    emit({ type: "INTERRUPTED", actionId: "search-initial", constraint, at });
+    emit({
+      type: "PLAN_SET",
+      revised: true,
+      plan: [{ id: "official", label: "Check official sources", status: "active" }],
+      at,
+    });
+  },
+  finish() {
+    emit({ type: "BRIEF_WRITTEN", brief: decisionBrief, at });
+  },
+  dispose() {},
+}) satisfies DemoController;
+
+const completedDemoController: ControllerFactory = (emit) => ({
+  start() {
+    emit({ type: "BRIEF_WRITTEN", brief: decisionBrief, at });
+  },
+  interrupt() {},
+  finish() {},
+  dispose() {},
+});
+
+describe("TalkOSApp", () => {
+  it("shows the revised constraint after the user interrupts", async () => {
+    const user = userEvent.setup();
+    render(<TalkOSApp controllerFactory={instantDemoController} />);
+
+    await user.click(screen.getByRole("button", { name: /run the demo/i }));
+    await user.click(screen.getByRole("button", { name: /interrupt agent/i }));
+
+    expect(screen.getByText(/use official sources only/i)).toBeVisible();
+    expect(screen.getByText(/plan revised/i)).toBeVisible();
+  });
+
+  it("allows keyboard users to switch between Browser and Notes", async () => {
+    const user = userEvent.setup();
+    render(<TalkOSApp controllerFactory={completedDemoController} />);
+
+    await user.click(screen.getByRole("button", { name: /run the demo/i }));
+    await user.click(screen.getByRole("tab", { name: /browser/i }));
+    await user.click(screen.getByRole("tab", { name: /notes/i }));
+
+    expect(screen.getByRole("tabpanel", { name: /notes/i })).toBeVisible();
+  });
+
+  it("stops an active session", async () => {
+    const user = userEvent.setup();
+    render(<TalkOSApp controllerFactory={instantDemoController} />);
+
+    await user.click(screen.getByRole("button", { name: /run the demo/i }));
+    await user.click(screen.getByRole("button", { name: /stop session/i }));
+
+    expect(screen.getByText("Ready")).toBeVisible();
+  });
+});

@@ -1,4 +1,4 @@
-import { Pause, Play, RotateCcw } from "lucide-react";
+import { Mic, Pause, Play, RotateCcw } from "lucide-react";
 import type { SessionState } from "@/features/session/session.types";
 import { ActivityTimeline } from "./ActivityTimeline";
 import { Transcript } from "./Transcript";
@@ -9,9 +9,10 @@ interface VoicePanelProps {
   onRun: () => void;
   onInterrupt: () => void;
   onReset: () => void;
+  onStartLive: () => void;
 }
 
-export function VoicePanel({ state, onRun, onInterrupt, onReset }: VoicePanelProps) {
+export function VoicePanel({ state, onRun, onInterrupt, onReset, onStartLive }: VoicePanelProps) {
   const active = state.connected || state.activities.some((item) => item.status === "active");
 
   return (
@@ -34,10 +35,16 @@ export function VoicePanel({ state, onRun, onInterrupt, onReset }: VoicePanelPro
 
       <ActivityTimeline activities={state.activities} planRevision={state.planRevision} />
 
+      {state.error ? <p className="voice-error" role="alert">{state.error}</p> : null}
+
       <div className="voice-controls">
         <button className="button button--primary" type="button" onClick={onRun} disabled={active}>
           <Play size={16} fill="currentColor" />
           Run the demo
+        </button>
+        <button className="button button--live" type="button" onClick={onStartLive} disabled={active}>
+          <Mic size={16} />
+          Start live voice
         </button>
         <button className="button button--interrupt" type="button" onClick={onInterrupt} disabled={!active}>
           <Pause size={16} fill="currentColor" />

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { expect, it } from "vitest";
 import HomePage from "./page";
 
 it("presents TalkOS and a demo entry control", () => {

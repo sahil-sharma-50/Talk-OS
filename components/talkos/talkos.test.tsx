@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { DemoController } from "@/features/demo/demo-controller";
 import { decisionBrief } from "@/features/session/session.fixtures";
+import { VoiceNotConfiguredError, type VoiceAdapter } from "@/features/voice/voice-adapter.types";
 import { TalkOSApp, type ControllerFactory } from "./TalkOSApp";
 
 const at = "2026-09-12T12:00:00.000Z";
@@ -77,5 +78,27 @@ describe("TalkOSApp", () => {
     await user.click(screen.getByRole("button", { name: /stop session/i }));
 
     expect(screen.getByText("Ready")).toBeVisible();
+  });
+
+  it("keeps demo mode available when live voice is not configured", async () => {
+    const user = userEvent.setup();
+    const unavailableAdapter: VoiceAdapter = {
+      async connect() { throw new VoiceNotConfiguredError(); },
+      async startListening() {},
+      stopListening() {},
+      interrupt() {},
+      async disconnect() {},
+    };
+    render(
+      <TalkOSApp
+        controllerFactory={instantDemoController}
+        voiceAdapterFactory={() => unavailableAdapter}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /start live voice/i }));
+
+    expect(screen.getByText(/live voice is not configured/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /run the demo/i })).toBeEnabled();
   });
 });

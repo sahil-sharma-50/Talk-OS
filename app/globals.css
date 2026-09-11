@@ -93,9 +93,12 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .button { display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 8px; padding: 0 11px; }
 .button--primary { background: var(--citron); color: var(--citron-ink); }
 .button--primary:hover:not(:disabled) { background: #e6ff76; }
+.button--live { border: 1px solid var(--line-light); background: var(--panel-3); color: var(--text); }
+.button--live:hover:not(:disabled) { background: #29302b; }
 .button--interrupt { border: 1px solid #71403d; background: #211513; color: var(--coral); }
 .button--interrupt:hover:not(:disabled) { background: #301a18; }
 .icon-button { width: 41px; display: grid; flex: 0 0 41px; place-items: center; border: 1px solid var(--line-light); background: transparent; color: var(--muted-strong); }
+.voice-error { margin: 0; padding: 9px 18px; border-top: 1px solid #603a36; background: #241614; color: #ffb5af; font-size: 10px; line-height: 1.45; }
 
 .workspace { min-width: 0; overflow: hidden; background: var(--panel-2); }
 .workspace-tabs { height: 54px; gap: 4px; padding: 0 20px; border-bottom: 1px solid var(--line); background: #111512; }

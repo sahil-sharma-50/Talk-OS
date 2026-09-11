@@ -4,6 +4,12 @@ import {
   type VoiceAdapter,
   type VoiceEventSink,
 } from "./voice-adapter.types";
+import {
+  executeResearchTool,
+  researchTools,
+  type ResearchToolCall,
+  type ResearchToolExecution,
+} from "./research-tools";
 
 type AssemblyAIEvent = Record<string, unknown> & { type?: string };
 
@@ -48,7 +54,7 @@ export function normalizeVoiceEvent(message: AssemblyAIEvent): SessionEvent | nu
       return {
         type: "ACTION_STARTED",
         action: {
-          id: typeof message.id === "string" ? message.id : `tool-${at()}`,
+          id: typeof message.call_id === "string" ? message.call_id : `tool-${at()}`,
           label: typeof message.name === "string" ? message.name.replaceAll("_", " ") : "Using research tool",
           detail: "AssemblyAI tool call",
           status: "active",
@@ -99,6 +105,7 @@ export function createAssemblyAIAdapter(): VoiceAdapter {
   let playbackSources: AudioBufferSourceNode[] = [];
   let playbackTime = 0;
   let emit: VoiceEventSink = () => undefined;
+  let pendingResults: Array<{ callId: string; execution: ResearchToolExecution }> = [];
 
   const stopPlayback = () => {
     playbackSources.forEach((node) => {
@@ -116,10 +123,11 @@ export function createAssemblyAIAdapter(): VoiceAdapter {
     stream = null;
     worklet = null;
     source = null;
-    socket?.close();
+      socket?.close();
     socket = null;
     if (audioContext && audioContext.state !== "closed") await audioContext.close();
     audioContext = null;
+    pendingResults = [];
   };
 
   return {
@@ -149,7 +157,7 @@ export function createAssemblyAIAdapter(): VoiceAdapter {
       socket.addEventListener("open", () => {
         socket?.send(JSON.stringify({
           type: "session.update",
-          session: { agent_id: credentials.agentId },
+          session: { agent_id: credentials.agentId, tools: researchTools },
         }));
       });
       worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
@@ -173,6 +181,29 @@ export function createAssemblyAIAdapter(): VoiceAdapter {
           playback.onended = () => {
             playbackSources = playbackSources.filter((item) => item !== playback);
           };
+        }
+        if (
+          message.type === "tool.call" &&
+          typeof message.call_id === "string" &&
+          typeof message.name === "string" &&
+          message.arguments &&
+          typeof message.arguments === "object"
+        ) {
+          const call = message as AssemblyAIEvent & ResearchToolCall;
+          const execution = executeResearchTool(call);
+          execution.events.forEach((normalizedEvent) => emit(normalizedEvent));
+          pendingResults.push({ callId: call.call_id, execution });
+        }
+        if (message.type === "reply.done" && socket?.readyState === WebSocket.OPEN) {
+          pendingResults.forEach(({ callId, execution }) => {
+            socket?.send(JSON.stringify({
+              type: "tool.result",
+              call_id: callId,
+              result: JSON.stringify(execution.result),
+              is_error: execution.isError ?? false,
+            }));
+          });
+          pendingResults = [];
         }
         if (message.type === "reply.done" && message.status === "interrupted") stopPlayback();
         const normalized = normalizeVoiceEvent(message);

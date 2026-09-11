@@ -26,4 +26,10 @@ describe("normalizeVoiceEvent", () => {
       normalizeVoiceEvent({ type: "reply.done", status: "interrupted" }),
     ).toMatchObject({ type: "VOICE_STATE_CHANGED", voiceState: "interrupted" });
   });
+
+  it("preserves the AssemblyAI call id on visible tool activity", () => {
+    expect(
+      normalizeVoiceEvent({ type: "tool.call", call_id: "call-42", name: "search_sources" }),
+    ).toMatchObject({ type: "ACTION_STARTED", action: { id: "call-42" } });
+  });
 });

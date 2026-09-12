@@ -37,6 +37,7 @@ export function TalkOSApp({
   const connectingRef = useRef<Promise<VoiceAdapter | null> | null>(null);
   const microphoneStartedRef = useRef(false);
   const followAgentRef = useRef(true);
+  const lastAgentWorkspaceRef = useRef<WorkspaceView>("documents");
   const saveQueueRef = useRef(Promise.resolve());
   const workspaceLoadedRef = useRef(false);
 
@@ -87,7 +88,10 @@ export function TalkOSApp({
       followAgentRef.current = false;
       setFollowAgent(false);
     }
-    if (source === "agent" && !followAgentRef.current) return;
+    if (source === "agent") {
+      lastAgentWorkspaceRef.current = nextView;
+      if (!followAgentRef.current) return;
+    }
     dispatch({ type: "WORKSPACE_CHANGED", workspace: nextView, at: new Date().toISOString() });
   }, []);
 
@@ -206,10 +210,12 @@ export function TalkOSApp({
           <button className="header-button" type="button" onClick={() => changeWorkspace("settings")}>
             <HelpCircle size={16} /> Setup
           </button>
-          {!followAgent ? <button className="header-button follow-button" type="button" onClick={() => {
-            followAgentRef.current = true;
-            setFollowAgent(true);
-          }}>Follow agent</button> : null}
+          <button className="header-button follow-button" type="button" aria-pressed={followAgent} onClick={() => {
+            const next = !followAgentRef.current;
+            followAgentRef.current = next;
+            setFollowAgent(next);
+            if (next) dispatch({ type: "WORKSPACE_CHANGED", workspace: lastAgentWorkspaceRef.current, at: new Date().toISOString() });
+          }}>Follow agent</button>
           <button className="header-button" type="button" onClick={reset} aria-label="New session">
             <RotateCcw size={15} /> New session
           </button>

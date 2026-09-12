@@ -15,6 +15,7 @@ import {
 } from "./research-tools";
 import { createWorkspace } from "@/features/workspace/workspace-model";
 import { emptyVoiceTelemetry, recordVoiceTelemetry, type VoiceTelemetrySnapshot } from "./voice-telemetry";
+import { workspaceForTool } from "./tool-workspace";
 
 type AssemblyAIEvent = Record<string, unknown> & { type?: string };
 
@@ -294,6 +295,8 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           typeof message.arguments === "object"
         ) {
           const call = message as AssemblyAIEvent & ResearchToolCall;
+          const requestedWorkspace = workspaceForTool(call.name);
+          if (requestedWorkspace) runtime.setActiveView?.(requestedWorkspace);
           const callGeneration = generation;
           const controller = new AbortController();
           activeCalls.add(controller);

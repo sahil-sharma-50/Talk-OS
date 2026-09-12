@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssemblyAIAdapter, normalizeVoiceEvent } from "./assemblyai-adapter";
 import { LIVE_SYSTEM_PROMPT, workspaceTools } from "./research-tools";
+import { createWorkspace } from "@/features/workspace/workspace-model";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -35,7 +36,13 @@ describe("AssemblyAI session setup", () => {
 
     const emit = vi.fn();
     const telemetry = vi.fn();
-    const adapter = createAssemblyAIAdapter();
+    const activeView = vi.fn();
+    const adapter = createAssemblyAIAdapter(undefined, {
+      getWorkspace: () => createWorkspace(),
+      setWorkspace: vi.fn(),
+      getTavilyApiKey: () => "",
+      setActiveView: activeView,
+    });
     adapter.setTelemetryListener?.(telemetry);
     await adapter.connect(emit);
     try {
@@ -67,6 +74,8 @@ describe("AssemblyAI session setup", () => {
         responseLatencyMs: expect.any(Number),
       }));
 
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-follow", name: "search_web", arguments: { query: "voice agents" } }) }));
+      expect(activeView).toHaveBeenCalledWith("research");
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-live", name: "get_workspace", arguments: {} }) }));
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.started" }) }));
       expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "INTERRUPTION_STARTED", actionId: "call-live" }));

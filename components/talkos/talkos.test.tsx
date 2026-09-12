@@ -1,12 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DemoController } from "@/features/demo/demo-controller";
 import { decisionBrief } from "@/features/session/session.fixtures";
 import type { SessionEvent } from "@/features/session/session.types";
 import { vendorEvidence } from "@/features/demo/vendor-evidence";
-import { VoiceNotConfiguredError, type VoiceAdapter } from "@/features/voice/voice-adapter.types";
+import { VoiceNotConfiguredError, type VoiceAdapter, type VoiceCredentials } from "@/features/voice/voice-adapter.types";
 import type { VoiceTelemetrySnapshot } from "@/features/voice/voice-telemetry";
+import type { WorkspaceRuntime } from "@/features/voice/research-tools";
 import { TalkOSApp } from "./TalkOSApp";
 
 type ControllerFactory = (emit: (event: SessionEvent) => void) => DemoController;
@@ -219,6 +220,36 @@ describe("TalkOSApp", () => {
     expect(screen.getByText(/endpoint latency/i)).toBeVisible();
     expect(screen.getByText("124 ms")).toBeVisible();
     expect(screen.getByText(/endpoint detected/i)).toBeVisible();
+  });
+
+  it("follows tool work until the user manually chooses a workspace", async () => {
+    const user = userEvent.setup();
+    let runtime: WorkspaceRuntime | undefined;
+    const factory = (_credentials?: VoiceCredentials, nextRuntime?: WorkspaceRuntime): VoiceAdapter => {
+      runtime = nextRuntime;
+      return {
+        async connect() {},
+        async startListening() {},
+        stopListening() {},
+        async disconnect() {},
+      };
+    };
+    render(<TalkOSApp voiceAdapterFactory={factory} />);
+    await user.click(screen.getByRole("button", { name: /start voice agent/i }));
+
+    const follow = screen.getByRole("button", { name: /follow agent/i });
+    expect(follow).toHaveAttribute("aria-pressed", "true");
+    act(() => runtime?.setActiveView?.("research"));
+    expect(screen.getByRole("tabpanel", { name: /research/i })).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: /documents/i }));
+    expect(follow).toHaveAttribute("aria-pressed", "false");
+    act(() => runtime?.setActiveView?.("sheets"));
+    expect(screen.getByRole("tabpanel", { name: /documents/i })).toBeVisible();
+
+    await user.click(follow);
+    expect(follow).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tabpanel", { name: /sheets/i })).toBeVisible();
   });
 
   it("rejects an email-shaped AssemblyAI Agent ID", async () => {

@@ -81,6 +81,20 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         activities: updateActivity(state.activities, event.actionId, "failed", event.detail),
         error: event.detail,
       };
+    case "INTERRUPTION_STARTED": {
+      const actionId = event.actionId ?? state.activities.findLast((item) => item.status === "active")?.id;
+      return {
+        ...state,
+        voiceState: "interrupted",
+        partialTranscript: state.partialTranscript?.speaker === "agent" ? null : state.partialTranscript,
+        invalidatedActionIds: actionId && !state.invalidatedActionIds.includes(actionId)
+          ? [...state.invalidatedActionIds, actionId]
+          : state.invalidatedActionIds,
+        activities: actionId
+          ? updateActivity(state.activities, actionId, "interrupted", "Redirected by user")
+          : state.activities,
+      };
+    }
     case "INTERRUPTED": {
       const actionId = event.actionId ?? state.activities.findLast((item) => item.status === "active")?.id;
       return {

@@ -69,7 +69,25 @@ describe("AssemblyAI session setup", () => {
 
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-live", name: "get_workspace", arguments: {} }) }));
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.started" }) }));
-      expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "INTERRUPTED", actionId: "call-live" }));
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "INTERRUPTION_STARTED", actionId: "call-live" }));
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "transcript.user", text: "Target developers instead" }) }));
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({
+        type: "INTERRUPTED",
+        actionId: "call-live",
+        constraint: "Target developers instead",
+      }));
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "reply.done", status: "interrupted" }) }));
+      await Promise.resolve();
+      expect(telemetry).toHaveBeenLastCalledWith(expect.objectContaining({
+        events: expect.arrayContaining([
+          expect.objectContaining({ kind: "interruption_candidate" }),
+          expect.objectContaining({ kind: "interruption_confirmed" }),
+        ]),
+      }));
+      expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).not.toContainEqual(expect.objectContaining({
+        type: "tool.result",
+        call_id: "call-live",
+      }));
     } finally {
       await adapter.disconnect();
     }

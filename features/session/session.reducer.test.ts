@@ -68,6 +68,24 @@ describe("sessionReducer", () => {
     expect(state.turns).toHaveLength(0);
   });
 
+  it("marks active work interrupted before redirect text is final", () => {
+    const active = sessionReducer(initialSessionState, {
+      type: "ACTION_STARTED",
+      action: action("call-1", "Drafting a launch plan"),
+      at,
+    });
+    const interrupted = sessionReducer(active, {
+      type: "INTERRUPTION_STARTED",
+      actionId: "call-1",
+      at,
+    });
+
+    expect(interrupted.voiceState).toBe("interrupted");
+    expect(interrupted.invalidatedActionIds).toContain("call-1");
+    expect(interrupted.activities.find((item) => item.id === "call-1")?.status).toBe("interrupted");
+    expect(interrupted.constraints).toEqual([]);
+  });
+
   it("accumulates transcript fragments from the same speaker", () => {
     const state = reduce([
       { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Wait", at },

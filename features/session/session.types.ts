@@ -9,7 +9,7 @@ export type VoiceState =
   | "error";
 
 export type Speaker = "user" | "agent";
-export type WorkspaceView = "browser" | "notes";
+export type WorkspaceView = "documents" | "sheets" | "planner" | "research" | "settings";
 export type ActivityStatus = "pending" | "active" | "completed" | "interrupted" | "failed";
 
 export interface ConversationTurn {
@@ -84,11 +84,13 @@ export type SessionEvent =
   | (Timed & { type: "VOICE_STATE_CHANGED"; voiceState: VoiceState })
   | (Timed & { type: "TRANSCRIPT_PARTIAL"; speaker: Speaker; text: string })
   | (Timed & { type: "TALK_TURN_FINALIZED"; speaker: Speaker; text: string })
+  | (Timed & { type: "TURNS_HYDRATED"; turns: ConversationTurn[] })
   | (Timed & { type: "OBJECTIVE_SET"; objective: string })
   | (Timed & { type: "PLAN_SET"; plan: PlanItem[]; revised?: boolean })
   | (Timed & { type: "ACTION_STARTED"; action: Activity })
   | (Timed & { type: "ACTION_COMPLETED"; actionId: string; detail?: string })
   | (Timed & { type: "ACTION_FAILED"; actionId: string; detail: string })
+  | (Timed & { type: "INTERRUPTION_STARTED"; actionId?: string })
   | (Timed & { type: "INTERRUPTED"; actionId?: string; constraint: string })
   | (Timed & { type: "EVIDENCE_ADDED"; evidence: Evidence })
   | (Timed & { type: "BRIEF_WRITTEN"; brief: DecisionBrief })

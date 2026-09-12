@@ -123,9 +123,19 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
   let telemetryListener: (snapshot: VoiceTelemetrySnapshot) => void = () => undefined;
   let telemetry = emptyVoiceTelemetry;
   let replyDone = false;
+  let replyActive = false;
+  let redirectPending = false;
+  let redirectedActionId: string | undefined;
   let generation = 0;
   const activeCalls = new Set<AbortController>();
   const activeActionIds = new Set<string>();
+
+  const trackTelemetry = (message: AssemblyAIEvent) => {
+    const nextTelemetry = recordVoiceTelemetry(telemetry, message, Date.now());
+    if (nextTelemetry === telemetry) return;
+    telemetry = nextTelemetry;
+    telemetryListener(telemetry);
+  };
 
   const flushResults = () => {
     if (!replyDone || socket?.readyState !== WebSocket.OPEN) return;
@@ -188,6 +198,9 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     audioContext = null;
     pendingResults = [];
     pendingText = [];
+    replyActive = false;
+    redirectPending = false;
+    redirectedActionId = undefined;
     levelListener(0);
     activeCalls.forEach((controller) => controller.abort());
     activeCalls.clear();
@@ -221,11 +234,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       });
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(String(event.data)) as AssemblyAIEvent;
-        const nextTelemetry = recordVoiceTelemetry(telemetry, message, Date.now());
-        if (nextTelemetry !== telemetry) {
-          telemetry = nextTelemetry;
-          telemetryListener(telemetry);
-        }
+        trackTelemetry(message);
         if (message.type === "session.ready" && socket?.readyState === WebSocket.OPEN) {
           // Stored-agent binding cannot include inline configuration in the first update.
           socket.send(JSON.stringify({ type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT } }));
@@ -252,18 +261,30 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
             if (!playbackSources.length) levelListener(0);
           };
         }
-        if (message.type === "reply.started") replyDone = false;
+        if (message.type === "reply.started") {
+          replyDone = false;
+          replyActive = true;
+        }
         if (message.type === "input.speech.started") {
           const interruptedActionId = [...activeActionIds].at(-1) ?? pendingResults.at(-1)?.callId;
-          if (interruptedActionId) {
-            emit({ type: "INTERRUPTED", actionId: interruptedActionId, constraint: "Voice redirect", at: at() });
-          }
-          generation += 1;
-          activeCalls.forEach((controller) => controller.abort());
-          activeCalls.clear();
-          activeActionIds.clear();
-          pendingResults = [];
+          const interruptsActiveWork = replyActive || Boolean(interruptedActionId) || playbackSources.length > 0;
           stopPlayback();
+          if (interruptsActiveWork) {
+            redirectedActionId = interruptedActionId;
+            redirectPending = true;
+            trackTelemetry({ type: "talkos.interruption.candidate" });
+            emit({ type: "INTERRUPTION_STARTED", actionId: interruptedActionId, at: at() });
+            generation += 1;
+            activeCalls.forEach((controller) => controller.abort());
+            activeCalls.clear();
+            activeActionIds.clear();
+            pendingResults = [];
+          }
+        }
+        if (message.type === "transcript.user" && redirectPending && typeof message.text === "string" && message.text.trim()) {
+          emit({ type: "INTERRUPTED", actionId: redirectedActionId, constraint: message.text.trim(), at: at() });
+          redirectPending = false;
+          redirectedActionId = undefined;
         }
         if (
           message.type === "tool.call" &&
@@ -297,9 +318,14 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
         }
         if (message.type === "reply.done" && socket?.readyState === WebSocket.OPEN) {
           replyDone = true;
-          flushResults();
+          replyActive = false;
+          if (message.status === "interrupted") {
+            pendingResults = [];
+            stopPlayback();
+          } else {
+            flushResults();
+          }
         }
-        if (message.type === "reply.done" && message.status === "interrupted") stopPlayback();
         const normalized = normalizeVoiceEvent(message);
         if (normalized) emit(normalized);
       });

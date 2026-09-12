@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-12T13:52:00+02:00",
+  "title": "Design System: TalkOS",
+  "extensions": {
+    "colorMeta": {
+      "desk-black": { "role": "neutral", "displayName": "Desk Black", "canonical": "#0b0d0c", "tonalRamp": ["#090a09", "#101310", "#1c211d", "#343b35", "#596159", "#899089", "#c2c6c2", "#f2f3f2"] },
+      "panel": { "role": "neutral", "displayName": "Ledger Panel", "canonical": "#101412", "tonalRamp": ["#0a0c0b", "#101412", "#202720", "#39443b", "#5f6c62", "#909b92", "#c8cdc9", "#f2f4f2"] },
+      "paper": { "role": "neutral", "displayName": "Evidence Paper", "canonical": "#e9e7df", "tonalRamp": ["#282720", "#45433a", "#666359", "#89867b", "#aaa79c", "#cbc8be", "#e9e7df", "#f7f6f0"] },
+      "citron": { "role": "primary", "displayName": "Electric Citron", "canonical": "#dfff4f", "tonalRamp": ["#202900", "#354500", "#526800", "#748e05", "#98b71d", "#bbdc35", "#dfff4f", "#f3ffc2"] },
+      "interruption-coral": { "role": "secondary", "displayName": "Interruption Coral", "canonical": "#ff756d", "tonalRamp": ["#35100f", "#5d201e", "#87322e", "#b44741", "#db5c55", "#ff756d", "#ffaaa5", "#ffe1df"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Compressed Dispatch", "purpose": "Voice states and major evidence headlines." },
+      "body": { "displayName": "Calm Analysis", "purpose": "Conversation, findings, and decision rationale." },
+      "label": { "displayName": "Operational Data", "purpose": "Counts, timestamps, metadata, and sequence indices." }
+    },
+    "shadows": [
+      { "name": "connected-halo", "value": "0 0 0 5px rgba(223, 255, 79, 0.09)", "purpose": "Only the connected session status dot receives a halo." }
+    ],
+    "motion": [
+      { "name": "revision-settle", "value": "220ms cubic-bezier(.22, 1, .36, 1)", "purpose": "Introduces the persistent Plan revised splice without clipping its label." },
+      { "name": "voice-pulse", "value": "900ms cubic-bezier(.22, 1, .36, 1) alternate", "purpose": "Shows active voice energy; disabled for reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "compact-desktop", "value": "980px" },
+      { "name": "stacked-mobile", "value": "800px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Run Demo Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Highest-emphasis action for the deterministic judging path.",
+      "html": "<button class=\"ds-btn-primary\">Run demo</button>",
+      "css": ".ds-btn-primary { min-height: 41px; padding: 0 11px; border: 0; border-radius: 7px; background: var(--citron, #dfff4f); color: var(--citron-ink, #151a08); font: 750 11px Aptos, 'Segoe UI', sans-serif; cursor: pointer; } .ds-btn-primary:hover { background: #e6ff76; } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus, #a8c7ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Live Voice Button",
+      "kind": "button",
+      "refersTo": "button-live",
+      "description": "Outlined charcoal control for credentialed live voice.",
+      "html": "<button class=\"ds-btn-live\">Live voice</button>",
+      "css": ".ds-btn-live { min-height: 41px; padding: 0 11px; border: 1px solid var(--line-light, #4a514b); border-radius: 7px; background: var(--panel-3, #1d231f); color: var(--text, #f2f0e8); font: 750 11px Aptos, 'Segoe UI', sans-serif; cursor: pointer; } .ds-btn-live:hover { background: #29302b; } .ds-btn-live:focus-visible { outline: 2px solid var(--focus, #a8c7ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Interrupt Button",
+      "kind": "button",
+      "refersTo": "button-interrupt",
+      "description": "Coral control reserved for stopping or redirecting active work.",
+      "html": "<button class=\"ds-btn-interrupt\">Interrupt</button>",
+      "css": ".ds-btn-interrupt { min-height: 41px; padding: 0 11px; border: 1px solid #71403d; border-radius: 7px; background: #211513; color: var(--coral, #ff756d); font: 750 11px Aptos, 'Segoe UI', sans-serif; cursor: pointer; } .ds-btn-interrupt:hover { background: #301a18; } .ds-btn-interrupt:focus-visible { outline: 2px solid var(--focus, #a8c7ff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Workspace Tabs",
+      "kind": "nav",
+      "description": "Quiet Browser and Notes navigation with a citron selection rule.",
+      "html": "<nav class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Browser</button><button class=\"ds-tab\">Notes</button></nav>",
+      "css": ".ds-tabs { display: flex; height: 54px; gap: 4px; border-bottom: 1px solid var(--line, #343a35); background: #111512; } .ds-tab { position: relative; padding: 0 17px; border: 0; background: transparent; color: var(--muted, #929991); font: 650 12px Aptos, 'Segoe UI', sans-serif; } .ds-tab:hover { color: var(--text, #f2f0e8); } .ds-tab:focus-visible { outline: 2px solid var(--focus, #a8c7ff); outline-offset: -2px; } .ds-tab-active { color: var(--text, #f2f0e8); } .ds-tab-active::after { content: ''; position: absolute; right: 14px; bottom: 0; left: 14px; height: 2px; background: var(--citron, #dfff4f); }"
+    },
+    {
+      "name": "Interruption Splice",
+      "kind": "custom",
+      "refersTo": "revision-marker",
+      "description": "The signature cancelled-action, revision, and replacement sequence.",
+      "html": "<ol class=\"ds-ledger\"><li class=\"ds-cancelled\">Scanning the open web</li><li class=\"ds-revised\">↪ Plan revised</li><li class=\"ds-replacement\">Checking official sources</li></ol>",
+      "css": ".ds-ledger { margin: 0; padding: 12px; list-style: none; background: var(--panel, #101412); color: var(--text, #f2f0e8); font: 650 11px Aptos, 'Segoe UI', sans-serif; } .ds-ledger li { margin: 7px 0; } .ds-cancelled { color: var(--coral, #ff756d); text-decoration: line-through; } .ds-revised { display: inline-block; padding: 5px 8px; border-radius: 3px; background: var(--citron, #dfff4f); color: var(--citron-ink, #151a08); } .ds-replacement::before { content: '✓ '; color: #a8d5ae; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Assignment Desk",
+    "overview": "TalkOS feels like a newsroom assignment desk fused with an incident-command ledger: dense, calm, and accountable. The voice rail records intent and intervention while a dominant paper-like workspace preserves the evidence and decision. It is an analyst's instrument, never a generic chatbot or theatrical sci-fi operating system. The signature visual sentence is coral cancellation, followed immediately by a citron revision marker, followed by the replacement action.",
+    "keyCharacteristics": [
+      "Warm-black ruled surfaces surrounding one large ivory evidence plane.",
+      "Compressed editorial display type paired with quiet sans-serif body copy and mono telemetry.",
+      "Citron reserved for live, selected, revised, and primary-action states.",
+      "Coral reserved for interruption, error, and stopping.",
+      "Dense information with generous working space; no dashboard-card mosaic."
+    ],
+    "rules": [
+      { "name": "The Signal Rarity Rule", "body": "Citron and coral communicate state. Do not use either as ambient decoration.", "section": "colors" },
+      { "name": "The Three-Voice Rule", "body": "Display declares, sans-serif explains, and mono records. Do not swap these roles casually.", "section": "typography" },
+      { "name": "The Evidence-Dominance Rule", "body": "On desktop, the workspace remains the largest object in the first viewport.", "section": "layout" },
+      { "name": "The Ruled-Surface Rule", "body": "Prefer borders and tonal adjacency over floating cards or decorative shadows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep plans, actions, evidence, and recommendations visibly connected.",
+      "Do make interruption legible at a glance through color, strike-through, order, and plain language.",
+      "Do preserve keyboard focus, semantic tab behavior, live-region announcements, and reduced-motion support.",
+      "Do label authored evidence as demo data and keep source links inspectable."
+    ],
+    "donts": [
+      "Don't introduce gradients, glass effects, neon glow, or sci-fi HUD ornament.",
+      "Don't turn the workspace into a grid of generic metric cards.",
+      "Don't use coral for ordinary emphasis or citron as background decoration.",
+      "Don't hide the revised plan after the replacement action starts.",
+      "Don't fabricate customers, performance claims, or live-source results."
+    ]
+  }
+}

@@ -70,6 +70,7 @@ export function createDemoController(
       text: demoCopy.recommendation,
       at: now(),
     });
+    send({ type: "CONNECTION_CHANGED", connected: false, mode: "demo", at: now() });
     send({ type: "VOICE_STATE_CHANGED", voiceState: "idle", at: now() });
   };
 
@@ -111,7 +112,7 @@ export function createDemoController(
         },
         at: now(),
       }));
-      later(3600, () => ({
+      later(7000, () => ({
         type: "ACTION_COMPLETED",
         actionId: "search-initial",
         detail: "Broad comparison collected",
@@ -131,7 +132,7 @@ export function createDemoController(
         text: demoCopy.revisionAcknowledgement,
         at: now(),
       }));
-      later(700, () => ({
+      later(1400, () => ({
         type: "ACTION_STARTED",
         action: {
           id: "research-official",
@@ -143,15 +144,15 @@ export function createDemoController(
         at: now(),
       }));
       vendorEvidence.forEach((evidence, index) =>
-        later(1300 + index * 500, () => ({ type: "EVIDENCE_ADDED", evidence, at: now() })),
+        later(2000 + index * 500, () => ({ type: "EVIDENCE_ADDED", evidence, at: now() })),
       );
-      later(3500, () => ({
+      later(4200, () => ({
         type: "ACTION_COMPLETED",
         actionId: "research-official",
         detail: "4 official findings captured",
         at: now(),
       }));
-      later(3750, () => ({
+      later(4450, () => ({
         type: "ACTION_STARTED",
         action: {
           id: "write-brief",
@@ -162,15 +163,16 @@ export function createDemoController(
         },
         at: now(),
       }));
-      later(4550, () => ({ type: "BRIEF_WRITTEN", brief: createDecisionBrief(now()), at: now() }));
-      later(4575, () => ({ type: "ACTION_COMPLETED", actionId: "write-brief", at: now() }));
-      later(4750, () => ({
+      later(5250, () => ({ type: "BRIEF_WRITTEN", brief: createDecisionBrief(now()), at: now() }));
+      later(5275, () => ({ type: "ACTION_COMPLETED", actionId: "write-brief", at: now() }));
+      later(5450, () => ({
         type: "TALK_TURN_FINALIZED",
         speaker: "agent",
         text: demoCopy.recommendation,
         at: now(),
       }));
-      later(5000, () => ({ type: "VOICE_STATE_CHANGED", voiceState: "idle", at: now() }));
+      later(5680, () => ({ type: "CONNECTION_CHANGED", connected: false, mode: "demo", at: now() }));
+      later(5700, () => ({ type: "VOICE_STATE_CHANGED", voiceState: "idle", at: now() }));
     },
 
     finish() {

@@ -87,7 +87,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .activity__item[data-status="completed"] .activity__mark { color: #a8d5ae; }
 .activity__item[data-status="interrupted"] { color: var(--coral); text-decoration: line-through; }
 .activity__item[data-status="interrupted"] .activity__mark { color: var(--coral); }
-.activity__revision { display: inline-flex; gap: 7px; align-items: center; margin: 4px 0 6px 30px; padding: 5px 8px; border-radius: 3px; background: var(--citron); color: var(--citron-ink); font-size: 10px; animation: revise 500ms cubic-bezier(.22, 1, .36, 1) both; }
+.activity__revision { display: inline-flex; gap: 7px; align-items: center; margin: 4px 0 6px 30px; padding: 5px 8px; border-radius: 3px; background: var(--citron); color: var(--citron-ink); font-size: 10px; animation: revise 220ms cubic-bezier(.22, 1, .36, 1) both; }
 .voice-controls { gap: 8px; padding: 13px 18px 17px; border-top: 1px solid var(--line); background: #0e1210; }
 .button, .icon-button { min-height: 41px; border-radius: 7px; font-size: 11px; font-weight: 750; }
 .button { display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 8px; padding: 0 11px; }
@@ -164,7 +164,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .citations a { display: inline-flex; align-items: center; gap: 5px; color: #34517b; font-size: 10px; font-weight: 650; }
 
 @keyframes listen { from { transform: scaleY(.6); } to { transform: scaleY(1.35); } }
-@keyframes revise { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes revise { from { opacity: .72; transform: translateX(-5px); } to { opacity: 1; transform: translateX(0); } }
 
 @media (max-width: 980px) {
   .command-rail { grid-template-columns: 1fr auto; }

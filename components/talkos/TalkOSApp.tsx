@@ -48,7 +48,10 @@ export function TalkOSApp({
     controller.current = controllerFactory(emit);
     controller.current.start();
   };
-  const interrupt = () => controller.current?.interrupt(demoCopy.interruption);
+  const interrupt = () => {
+    controller.current?.interrupt(demoCopy.interruption);
+    voiceAdapter.current?.interrupt();
+  };
   const startLive = async () => {
     controller.current?.dispose();
     controller.current = null;

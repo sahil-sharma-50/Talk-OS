@@ -3,6 +3,8 @@
 .next/
 node_modules/
 coverage/
+output/
+.playwright-cli/
 *.tsbuildinfo
 .env*
 !.env.example

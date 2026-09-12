@@ -47,5 +47,10 @@ describe("createDemoController", () => {
     expect(events.filter((event) => event.type === "EVIDENCE_ADDED")).toHaveLength(4);
     expect(events.at(-1)?.type).toBe("VOICE_STATE_CHANGED");
     expect(events.some((event) => event.type === "BRIEF_WRITTEN")).toBe(true);
+    expect(
+      events.some(
+        (event) => event.type === "CONNECTION_CHANGED" && event.connected === false,
+      ),
+    ).toBe(true);
   });
 });

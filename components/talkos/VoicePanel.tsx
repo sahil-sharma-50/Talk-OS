@@ -38,17 +38,17 @@ export function VoicePanel({ state, onRun, onInterrupt, onReset, onStartLive }: 
       {state.error ? <p className="voice-error" role="alert">{state.error}</p> : null}
 
       <div className="voice-controls">
-        <button className="button button--primary" type="button" onClick={onRun} disabled={active}>
+        <button className="button button--primary" type="button" onClick={onRun} disabled={active} aria-label="Run the demo">
           <Play size={16} fill="currentColor" />
-          Run the demo
+          Run demo
         </button>
-        <button className="button button--live" type="button" onClick={onStartLive} disabled={active}>
+        <button className="button button--live" type="button" onClick={onStartLive} disabled={active} aria-label="Start live voice">
           <Mic size={16} />
-          Start live voice
+          Live voice
         </button>
-        <button className="button button--interrupt" type="button" onClick={onInterrupt} disabled={!active}>
+        <button className="button button--interrupt" type="button" onClick={onInterrupt} disabled={!active} aria-label="Interrupt agent">
           <Pause size={16} fill="currentColor" />
-          Interrupt agent
+          Interrupt
         </button>
         <button className="icon-button" type="button" onClick={onReset} aria-label="Reset demo">
           <RotateCcw size={17} />

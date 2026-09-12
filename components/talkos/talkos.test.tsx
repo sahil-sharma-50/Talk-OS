@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DemoController } from "@/features/demo/demo-controller";
@@ -151,11 +151,15 @@ describe("TalkOSApp", () => {
   it("uses the central voice agent as the only session control", () => {
     render(<TalkOSApp voiceAdapterFactory={voiceFromController(completedDemoController)} />);
 
-    expect(screen.getByRole("button", { name: /start voice agent/i })).toBeVisible();
+    const voiceControl = screen.getByRole("button", { name: /start voice agent/i });
+    expect(voiceControl).toBeVisible();
+    expect(voiceControl.querySelector(".voice-sphere")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /run fallback demo/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /interrupt agent/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reset conversation/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/ask talkos to research a decision/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("time", { name: /session duration/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /export active document/i })).not.toBeInTheDocument();
   });
 
   it("switches between light, dark, and system themes", async () => {
@@ -183,8 +187,22 @@ describe("TalkOSApp", () => {
     const drawer = screen.getByRole("complementary", { name: /activity drawer/i });
     expect(canvas).toContainElement(drawer);
     expect(drawer).not.toHaveTextContent("—");
-    await user.click(screen.getByRole("button", { name: /hide activity sidebar/i }));
+    expect(screen.queryByRole("button", { name: /close activity/i })).not.toBeInTheDocument();
+    const hideActivity = within(drawer).getByRole("button", { name: /hide activity sidebar/i });
+    await user.click(hideActivity);
     expect(screen.queryByRole("complementary", { name: /activity drawer/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps History mounted while it exits to the left", async () => {
+    const user = userEvent.setup();
+    render(<TalkOSApp />);
+    await user.click(screen.getByRole("button", { name: /history/i }));
+    const history = screen.getByRole("complementary", { name: /conversation history/i });
+
+    await user.click(within(history).getByRole("button", { name: /close history/i }));
+    expect(history).toHaveAttribute("data-state", "closing");
+    fireEvent.animationEnd(history);
+    expect(screen.queryByRole("complementary", { name: /conversation history/i })).not.toBeInTheDocument();
   });
 
   it("reveals real AssemblyAI telemetry only when Developer Mode is enabled", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, HelpCircle, RotateCcw, Square } from "lucide-react";
+import { HelpCircle, LocateFixed, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialSessionState } from "@/features/session/session.fixtures";
 import { sessionReducer } from "@/features/session/session.reducer";
@@ -24,7 +24,6 @@ export function TalkOSApp({
   voiceAdapterFactory = createAssemblyAIAdapter,
 }: TalkOSAppProps) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
-  const [seconds, setSeconds] = useState(0);
   const [credentials, setCredentialsState] = useState<VoiceCredentials>({ apiKey: "", agentId: "", tavilyApiKey: "" });
   const [workspace, setWorkspaceState] = useState<WorkspaceSnapshot>(() => createWorkspace());
   const [activityOpen, setActivityOpen] = useState(false);
@@ -76,12 +75,6 @@ export function TalkOSApp({
   useEffect(() => () => {
     void voiceAdapter.current?.disconnect();
   }, []);
-  useEffect(() => {
-    if (!state.connected) return;
-    const interval = window.setInterval(() => setSeconds((value) => value + 1), 1000);
-    return () => window.clearInterval(interval);
-  }, [state.connected]);
-
   const emit = useCallback((event: SessionEvent) => dispatch(event), []);
   const changeWorkspace = useCallback((nextView: WorkspaceView, source: "human" | "agent" = "human") => {
     if (source === "human") {
@@ -123,7 +116,6 @@ export function TalkOSApp({
       changeWorkspace("settings");
       return null;
     }
-    setSeconds(0);
     const completeCredentials = credentials.apiKey.trim() && credentials.agentId.trim() ? credentials : undefined;
     const runtime: WorkspaceRuntime = {
       getWorkspace: () => workspaceRef.current,
@@ -167,7 +159,6 @@ export function TalkOSApp({
     microphoneStartedRef.current = false;
     setAudioLevel(0);
     setTelemetry(emptyVoiceTelemetry);
-    setSeconds(0);
     dispatch({ type: "SESSION_RESET", at: new Date().toISOString() });
   };
   const stop = () => {
@@ -178,24 +169,11 @@ export function TalkOSApp({
     setTelemetry(emptyVoiceTelemetry);
     dispatch({ type: "SESSION_STOPPED", at: new Date().toISOString() });
   };
-  const exportDocument = () => {
-    const activeDocument = workspace.documents.find((item) => item.id === workspace.activeDocumentId);
-    if (!activeDocument) return;
-    const file = new Blob([activeDocument.content], { type: "text/markdown" });
-    const url = URL.createObjectURL(file);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${activeDocument.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "talkos-document"}.md`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
   const undoChange = (changeId: string) => {
     const result = undoLastWorkspaceChange(workspaceRef.current, changeId);
     if (result.ok) updateWorkspace(result.workspace);
     else dispatch({ type: "SESSION_ERROR", message: "That change cannot be undone because one of its files changed again.", at: new Date().toISOString() });
   };
-
-  const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   return (
     <main className="talkos-shell">
@@ -206,7 +184,6 @@ export function TalkOSApp({
         </div>
         <div className="command-rail__right">
           <ThemeSwitcher />
-          <time aria-label="Session duration">{time}</time>
           <button className="header-button" type="button" onClick={() => changeWorkspace("settings")}>
             <HelpCircle size={16} /> Setup
           </button>
@@ -215,13 +192,10 @@ export function TalkOSApp({
             followAgentRef.current = next;
             setFollowAgent(next);
             if (next) dispatch({ type: "WORKSPACE_CHANGED", workspace: lastAgentWorkspaceRef.current, at: new Date().toISOString() });
-          }}>Follow agent</button>
+          }}><LocateFixed size={15} /><span>Follow agent</span></button>
           <button className="header-button" type="button" onClick={reset} aria-label="New session">
             <RotateCcw size={15} /> New session
           </button>
-          {state.activeWorkspace === "documents" ? <button className="export-button" type="button" onClick={exportDocument} aria-label="Export active document">
-            <Download size={16} /> Export
-          </button> : null}
           <button className="stop-button" type="button" onClick={stop} aria-label="Stop session" disabled={!state.connected}>
             <Square size={13} fill="currentColor" /> Stop
           </button>
@@ -234,7 +208,7 @@ export function TalkOSApp({
           onStartLive={() => void startLive()}
           audioLevel={audioLevel}
         />
-        <Workspace state={state} workspace={workspace} onWorkspaceChange={changeWorkspace} onWorkspaceDataChange={updateWorkspace} credentials={credentials} onCredentialsChange={setCredentials} telemetry={telemetry} activityOpen={activityOpen} onActivityToggle={() => setActivityOpen((open) => !open)} onActivityClose={() => setActivityOpen(false)} onUndo={undoChange} />
+        <Workspace state={state} workspace={workspace} onWorkspaceChange={changeWorkspace} onWorkspaceDataChange={updateWorkspace} credentials={credentials} onCredentialsChange={setCredentials} telemetry={telemetry} activityOpen={activityOpen} onActivityToggle={() => setActivityOpen((open) => !open)} onUndo={undoChange} />
       </div>
     </main>
   );

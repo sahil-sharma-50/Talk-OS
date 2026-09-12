@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Eye, EyeOff, FileText, Globe2, KeyRound, PanelRightClose, PanelRightOpen, Settings2, ShieldCheck, Table2, Trash2, Undo2 } from "lucide-react";
+import { CalendarDays, Eye, EyeOff, FileText, Globe2, KeyRound, PanelRightOpen, Settings2, ShieldCheck, Table2, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionState, WorkspaceView } from "@/features/session/session.types";
 import type { VoiceCredentials } from "@/features/voice/voice-adapter.types";
@@ -23,11 +23,10 @@ interface WorkspaceProps {
   telemetry: VoiceTelemetrySnapshot;
   activityOpen: boolean;
   onActivityToggle: () => void;
-  onActivityClose: () => void;
   onUndo: (id: string) => void;
 }
 
-export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceDataChange, credentials, onCredentialsChange, telemetry, activityOpen, onActivityToggle, onActivityClose, onUndo }: WorkspaceProps) {
+export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceDataChange, credentials, onCredentialsChange, telemetry, activityOpen, onActivityToggle, onUndo }: WorkspaceProps) {
   const [showSecrets, setShowSecrets] = useState(false);
   const [agentEditable, setAgentEditable] = useState(false);
   const tabs: Array<{ id: WorkspaceView; label: string; icon: typeof FileText }> = [
@@ -64,11 +63,9 @@ export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceData
       <span className="workspace-tabs__meta">{workspace.documents.length + workspace.sheets.length + workspace.planners.length} files · {workspace.sources.length} sources</span>
     </div>
     <div className="workspace-canvas" role="tabpanel" id={`${state.activeWorkspace}-panel`} aria-labelledby={`${state.activeWorkspace}-tab`} aria-label={tabs.find((tab) => tab.id === state.activeWorkspace)?.label}>
-      <button className="activity-toggle" type="button" onClick={onActivityToggle} aria-label={activityOpen ? "Hide activity sidebar" : "Open activity sidebar"} aria-expanded={activityOpen} aria-controls="activity-drawer" title="Activity">
-        {activityOpen ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
-      </button>
+      {!activityOpen ? <button className="activity-toggle" type="button" onClick={onActivityToggle} aria-label="Open activity sidebar" aria-expanded="false" aria-controls="activity-drawer" title="Activity"><PanelRightOpen size={17} /></button> : null}
       <div className="workspace-canvas__scroll">{panel}</div>
-        <ActivityDrawer open={activityOpen} state={state} workspace={workspace} telemetry={telemetry} onClose={onActivityClose} onUndo={onUndo} />
+      <ActivityDrawer open={activityOpen} state={state} workspace={workspace} telemetry={telemetry} onToggle={onActivityToggle} onUndo={onUndo} />
     </div>
   </section>;
 }

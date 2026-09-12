@@ -1,19 +1,19 @@
 "use client";
 
-import { ChevronRight, Undo2, X } from "lucide-react";
+import { ChevronRight, PanelRightClose, Undo2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionState } from "@/features/session/session.types";
 import type { VoiceTelemetrySnapshot } from "@/features/voice/voice-telemetry";
 import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
 import { ActivityTimeline } from "./ActivityTimeline";
 
-export function ActivityDrawer({ open, state, workspace, telemetry, onClose, onUndo }: {
-  open: boolean; state: SessionState; workspace: WorkspaceSnapshot; telemetry: VoiceTelemetrySnapshot; onClose: () => void; onUndo: (id: string) => void;
+export function ActivityDrawer({ open, state, workspace, telemetry, onToggle, onUndo }: {
+  open: boolean; state: SessionState; workspace: WorkspaceSnapshot; telemetry: VoiceTelemetrySnapshot; onToggle: () => void; onUndo: (id: string) => void;
 }) {
   const [developerMode, setDeveloperMode] = useState(false);
   if (!open) return null;
   return <aside id="activity-drawer" className="side-drawer" aria-label="Activity drawer">
-    <header><div><strong>Activity</strong><span>{state.activities.length} actions</span></div><button type="button" onClick={onClose} aria-label="Close activity"><X size={17} /></button></header>
+    <header className="activity-drawer__header"><button className="activity-toggle activity-toggle--inside" type="button" onClick={onToggle} aria-label="Hide activity sidebar" aria-expanded="true" aria-controls="activity-drawer" title="Hide activity"><PanelRightClose size={17} /></button><div><strong>Activity</strong><span>{state.activities.length} actions</span></div></header>
     <section className="developer-mode-control">
       <div><strong>AssemblyAI</strong><span>Voice runtime</span></div>
       <button type="button" role="switch" aria-checked={developerMode} aria-label="Developer Mode" onClick={() => setDeveloperMode((enabled) => !enabled)}><i aria-hidden="true" /></button>

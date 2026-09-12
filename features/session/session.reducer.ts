@@ -25,13 +25,16 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       };
     case "VOICE_STATE_CHANGED":
       return { ...state, voiceState: event.voiceState, error: null };
-    case "TRANSCRIPT_PARTIAL":
+    case "TRANSCRIPT_PARTIAL": {
+      if (!event.text) return state;
+      const text = state.partialTranscript?.speaker === event.speaker
+        ? `${state.partialTranscript.text}${event.text}`
+        : event.text;
       return {
         ...state,
-        partialTranscript: event.text.trim()
-          ? { speaker: event.speaker, text: event.text }
-          : null,
+        partialTranscript: { speaker: event.speaker, text },
       };
+    }
     case "TALK_TURN_FINALIZED": {
       const text = event.text.trim();
       if (!text) return state;
@@ -49,6 +52,8 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         ],
       };
     }
+    case "TURNS_HYDRATED":
+      return { ...state, turns: event.turns };
     case "OBJECTIVE_SET":
       return { ...state, objective: event.objective };
     case "PLAN_SET":
@@ -100,14 +105,14 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       return {
         ...state,
         brief: event.brief,
-        activeWorkspace: "notes",
+        activeWorkspace: "documents",
         notesHasUpdate: true,
       };
     case "WORKSPACE_CHANGED":
       return {
         ...state,
         activeWorkspace: event.workspace,
-        notesHasUpdate: event.workspace === "notes" ? false : state.notesHasUpdate,
+        notesHasUpdate: event.workspace === "documents" ? false : state.notesHasUpdate,
       };
     case "SESSION_STOPPED":
       return {

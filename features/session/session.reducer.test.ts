@@ -33,14 +33,14 @@ describe("sessionReducer", () => {
     expect(stale.voiceState).toBe("interrupted");
   });
 
-  it("stores evidence and activates Notes when a brief is written", () => {
+  it("stores evidence and activates Documents when a brief is written", () => {
     const state = sessionReducer(initialSessionState, {
       type: "BRIEF_WRITTEN",
       brief: decisionBrief,
       at,
     });
 
-    expect(state.activeWorkspace).toBe("notes");
+    expect(state.activeWorkspace).toBe("documents");
     expect(state.notesHasUpdate).toBe(true);
     expect(state.brief?.recommendation).toMatch(/Supabase/);
   });
@@ -66,5 +66,32 @@ describe("sessionReducer", () => {
     });
 
     expect(state.turns).toHaveLength(0);
+  });
+
+  it("accumulates transcript fragments from the same speaker", () => {
+    const state = reduce([
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Wait", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: ", target developers", at },
+    ]);
+
+    expect(state.partialTranscript).toEqual({
+      speaker: "user",
+      text: "Wait, target developers",
+    });
+  });
+
+  it("starts a new partial transcript when the speaker changes", () => {
+    const state = reduce([
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Build it", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "I will", at },
+    ]);
+
+    expect(state.partialTranscript).toEqual({ speaker: "agent", text: "I will" });
+  });
+
+  it("hydrates saved conversation turns without replaying events", () => {
+    const turns = [{ id: "saved-turn", speaker: "agent" as const, text: "Welcome back", at }];
+    const state = sessionReducer(initialSessionState, { type: "TURNS_HYDRATED", turns, at });
+    expect(state.turns).toEqual(turns);
   });
 });

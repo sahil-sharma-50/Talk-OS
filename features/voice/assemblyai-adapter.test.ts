@@ -1,5 +1,151 @@
-import { describe, expect, it } from "vitest";
-import { normalizeVoiceEvent } from "./assemblyai-adapter";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createAssemblyAIAdapter, normalizeVoiceEvent } from "./assemblyai-adapter";
+import { LIVE_SYSTEM_PROMPT, workspaceTools } from "./research-tools";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("AssemblyAI session setup", () => {
+  it("binds the stored agent before registering tools and streaming audio", async () => {
+    class TestSocket extends EventTarget {
+      static OPEN = 1;
+      readyState = 1;
+      send = vi.fn();
+      close = vi.fn();
+    }
+    const socket = new TestSocket();
+    const port = { onmessage: null as null | ((event: MessageEvent<ArrayBuffer>) => void) };
+    vi.stubGlobal("WebSocket", class {
+      static OPEN = 1;
+      constructor() { return socket; }
+    });
+    vi.stubGlobal("AudioContext", class {
+      state = "running";
+      resume = vi.fn();
+      close = vi.fn();
+      audioWorklet = { addModule: vi.fn() };
+      createMediaStreamSource = () => ({ connect: vi.fn(), disconnect: vi.fn() });
+    });
+    vi.stubGlobal("AudioWorkletNode", class {
+      port = port;
+      disconnect = vi.fn();
+    });
+    const getUserMedia = vi.fn(async () => ({ getTracks: () => [] }));
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ token: "test-token", agentId: "agent-123" })));
+
+    const emit = vi.fn();
+    const telemetry = vi.fn();
+    const adapter = createAssemblyAIAdapter();
+    adapter.setTelemetryListener?.(telemetry);
+    await adapter.connect(emit);
+    try {
+      expect(getUserMedia).not.toHaveBeenCalled();
+      socket.dispatchEvent(new Event("open"));
+      expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
+        type: "session.update", session: { agent_id: "agent-123" },
+      });
+      socket.send.mockClear();
+      const audio = new MessageEvent("message", { data: new ArrayBuffer(2) });
+      port.onmessage?.(audio);
+      expect(socket.send).not.toHaveBeenCalled();
+
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
+      expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
+        type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT },
+      });
+      await adapter.startListening();
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      port.onmessage?.(audio);
+      expect(JSON.parse(socket.send.mock.calls[1][0])).toEqual({ type: "input.audio", audio: "AAA=" });
+
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.stopped" }) }));
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "transcript.user", text: "Change it" }) }));
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "reply.started" }) }));
+      expect(telemetry).toHaveBeenLastCalledWith(expect.objectContaining({
+        connected: true,
+        endpointLatencyMs: expect.any(Number),
+        responseLatencyMs: expect.any(Number),
+      }));
+
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-live", name: "get_workspace", arguments: {} }) }));
+      socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.started" }) }));
+      expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "INTERRUPTED", actionId: "call-live" }));
+    } finally {
+      await adapter.disconnect();
+    }
+  });
+
+  it("injects typed messages and requests a reply", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; currentTime = 0; resume = vi.fn(); close = vi.fn(); audioWorklet = { addModule: vi.fn() }; createMediaStreamSource = () => ({ connect: vi.fn(), disconnect: vi.fn() }); });
+    vi.stubGlobal("AudioWorkletNode", class { port = {}; disconnect = vi.fn(); });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn() } });
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ token: "test-token", agentId: "agent-123" })));
+    const adapter = createAssemblyAIAdapter();
+    await adapter.connect(vi.fn());
+    socket.dispatchEvent(new Event("open"));
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
+    socket.send.mockClear();
+    adapter.submitText?.("Build my budget");
+    expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toEqual([
+      { type: "conversation.message", role: "user", content: "Build my budget" },
+      { type: "reply.create" },
+    ]);
+    await adapter.disconnect();
+  });
+
+  it("queues a typed message until the stored-agent session is ready", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; currentTime = 0; resume = vi.fn(); close = vi.fn(); audioWorklet = { addModule: vi.fn() }; });
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ token: "test-token", agentId: "agent-123" })));
+    const adapter = createAssemblyAIAdapter();
+    await adapter.connect(vi.fn());
+    socket.dispatchEvent(new Event("open"));
+    socket.send.mockClear();
+
+    adapter.submitText?.("Make a launch plan");
+    expect(socket.send).not.toHaveBeenCalled();
+
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
+    expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toEqual([
+      { type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT } },
+      { type: "conversation.message", role: "user", content: "Make a launch plan" },
+      { type: "reply.create" },
+    ]);
+    await adapter.disconnect();
+  });
+
+  it("reports microphone energy to the reactive bot", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    const port = { onmessage: null as null | ((event: MessageEvent<ArrayBuffer>) => void) };
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class {
+      state = "running"; sampleRate = 48_000; currentTime = 0; resume = vi.fn(); close = vi.fn();
+      audioWorklet = { addModule: vi.fn() };
+      createMediaStreamSource = () => ({ connect: vi.fn(), disconnect: vi.fn() });
+    });
+    vi.stubGlobal("AudioWorkletNode", class { port = port; disconnect = vi.fn(); });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) } });
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ token: "test-token", agentId: "agent-123" })));
+    const level = vi.fn();
+    const adapter = createAssemblyAIAdapter();
+    adapter.setLevelListener?.(level);
+    await adapter.connect(vi.fn());
+    socket.dispatchEvent(new Event("open"));
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
+    await adapter.startListening();
+    const samples = new Int16Array([0, 16_384, -16_384, 8_192]);
+    port.onmessage?.(new MessageEvent("message", { data: samples.buffer }));
+    expect(level).toHaveBeenCalledWith(expect.any(Number));
+    expect(level.mock.calls.at(-1)?.[0]).toBeGreaterThan(0.2);
+    await adapter.disconnect();
+  });
+});
 
 describe("normalizeVoiceEvent", () => {
   it("maps a final user transcript to a finalized TalkOS turn", () => {

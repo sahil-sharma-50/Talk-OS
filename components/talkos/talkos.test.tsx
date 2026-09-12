@@ -6,6 +6,7 @@ import { decisionBrief } from "@/features/session/session.fixtures";
 import type { SessionEvent } from "@/features/session/session.types";
 import { vendorEvidence } from "@/features/demo/vendor-evidence";
 import { VoiceNotConfiguredError, type VoiceAdapter } from "@/features/voice/voice-adapter.types";
+import type { VoiceTelemetrySnapshot } from "@/features/voice/voice-telemetry";
 import { TalkOSApp } from "./TalkOSApp";
 
 type ControllerFactory = (emit: (event: SessionEvent) => void) => DemoController;
@@ -183,6 +184,41 @@ describe("TalkOSApp", () => {
     expect(drawer).not.toHaveTextContent("—");
     await user.click(screen.getByRole("button", { name: /hide activity sidebar/i }));
     expect(screen.queryByRole("complementary", { name: /activity drawer/i })).not.toBeInTheDocument();
+  });
+
+  it("reveals real AssemblyAI telemetry only when Developer Mode is enabled", async () => {
+    const user = userEvent.setup();
+    const telemetry: VoiceTelemetrySnapshot = {
+      connected: true,
+      endpointLatencyMs: 124,
+      responseLatencyMs: 218,
+      lastEndpointAt: 1000,
+      lastUserFinalAt: 1124,
+      events: [{
+        id: "endpoint-1000",
+        kind: "endpoint_detected",
+        label: "Endpoint detected",
+        receivedAt: 1000,
+      }],
+    };
+    let onTelemetry: ((snapshot: VoiceTelemetrySnapshot) => void) | undefined;
+    const factory = (): VoiceAdapter => ({
+      async connect() { onTelemetry?.(telemetry); },
+      async startListening() {},
+      stopListening() {},
+      setTelemetryListener(listener) { onTelemetry = listener; },
+      async disconnect() {},
+    });
+    render(<TalkOSApp voiceAdapterFactory={factory} />);
+    await user.click(screen.getByRole("button", { name: /start voice agent/i }));
+    await user.click(screen.getByRole("button", { name: /open activity sidebar/i }));
+
+    expect(screen.queryByText(/endpoint latency/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: /developer mode/i }));
+    expect(screen.getByText(/assemblyai live/i)).toBeVisible();
+    expect(screen.getByText(/endpoint latency/i)).toBeVisible();
+    expect(screen.getByText("124 ms")).toBeVisible();
+    expect(screen.getByText(/endpoint detected/i)).toBeVisible();
   });
 
   it("rejects an email-shaped AssemblyAI Agent ID", async () => {

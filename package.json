@@ -12,6 +12,8 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@dagrejs/dagre": "3.1.1",
+    "@excalidraw/excalidraw": "0.18.1",
     "@types/papaparse": "^5.5.2",
     "lucide-react": "latest",
     "next": "latest",

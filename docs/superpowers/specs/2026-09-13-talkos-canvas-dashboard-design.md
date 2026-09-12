@@ -2,6 +2,12 @@
 
 Status: draft for product review. Requested work is feasibility and planning; this document does not authorize implementation. Inspected the current working tree on 2026-09-13, including existing uncommitted workspace work.
 
+## Task 1 feasibility update (2026-09-13)
+
+The development-only integration spike pins `@excalidraw/excalidraw` 0.18.1 and `@dagrejs/dagre` 3.1.1. Excalidraw 0.18.1 declares React/React DOM `^17.0.2 || ^18.2.0 || ^19.0.0`; its transitive Radix Tabs dependency still declares React 18, so the lockfile resolves React and React DOM 18.3.1 with Next 16.3.5. The production build completed with this resolved set.
+
+The selected TalkOS history integration is a canonical scene snapshot/receipt bridge: committed pointer/text/agent transactions supply `before` and `after` scenes, while externally applied scenes use `ExcalidrawImperativeAPI.updateScene` with the documented `CaptureUpdateAction.NEVER` to avoid an echo receipt. The public imperative API exposes `history.clear` only; it does not expose editor undo/redo notifications or a way to replace the editor history. Therefore native keyboard and menu undo/redo cannot yet be safely merged with TalkOS history using public SDK APIs. Do not proceed to the full Canvas implementation until this history boundary is replaced or a supported editor API is found.
+
 ## Recommendation and feasibility
 
 Implement Canvas first, then Dashboard. Both fit the existing Next.js/React/TypeScript application, local IndexedDB persistence, client-executed agent tools, and revision-checked workspace changes. Neither needs a new backend for the proposed scope. Actual voice latency and new editor compatibility still need an implementation spike; this review did not exercise a live provider session.

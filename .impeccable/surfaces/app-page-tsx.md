@@ -1,52 +1,50 @@
 ---
-version: 1
+version: 2
 slug: "app-page-tsx"
 primary_target: "app/page.tsx"
-related_targets: ["components/talkos/TalkOSApp.tsx","app/globals.css"]
+related_targets: ["components/talkos/TalkOSApp.tsx","components/talkos/Workspace.tsx","components/talkos/VoicePanel.tsx","app/globals.css"]
 ---
 
-# TalkOS primary workspace
+# TalkOS everyday task workspace
 
 ## Scope and mode
 
-- Target: `app/page.tsx` and the TalkOS cockpit component tree.
+- Target: the TalkOS application shell and its Documents, Sheets, Planner, Research, Settings, History, and Activity surfaces.
 - Mode: Operate.
-- Audience: startup operators, technical founders, and procurement-minded knowledge workers evaluating software vendors.
-- Job: direct live research by voice, see what the agent is doing, interrupt it, and receive a traceable decision brief.
-- Primary action: run the demonstration, then interrupt the active research.
+- Audience: founders, operators, students, and knowledge workers turning an outcome into usable artifacts.
+- Job: direct work by voice or text, inspect what changes, redirect naturally, and leave with real exportable files.
+- Primary action: speak through the central reactive agent or type in the composer; both use one AssemblyAI session.
 
 ## Direction
 
-Assignment Desk: a newsroom assignment desk fused with an incident-command ledger. The workspace stays dominant while the voice transcript, objective, constraints, and action history form a narrow operational rail. The memorable moment is an interrupted action struck through in coral, physically connected to a citron “Plan revised” event and the replacement official-source task.
-
-Approved north-star composition: `.impeccable/mocks/assignment-desk.png`.
-
-The comp is a compositional north star, not literal product data. The implementation must use the approved Supabase/Firebase demonstration, not the logistics example accidentally rendered in the mockup.
+Working Canvas: a calm two-column productivity shell. The compact agent rail holds only the current one-to-one exchange; older turns and tool activity stay in drawers. The dominant dotted canvas hosts a native-feeling editor selected from Documents, Sheets, Planner, Research, and Settings. The memorable moment is an interruption that prevents stale work and produces one coordinated, undoable update across multiple artifacts.
 
 ## Implementation inventory
 
-| Ingredient | Commitment | Medium |
-| --- | --- | --- |
-| Global command rail | TalkOS identity, live/demo state, elapsed session time, Stop | Semantic HTML/CSS + Lucide icons |
-| Voice state | Large state word, microphone mark, restrained waveform | Semantic HTML/CSS |
-| Transcript | Final turns plus visually distinct live partial turn | Semantic list + ARIA live region |
-| Objective and constraints | Compact labeled operational blocks | Semantic HTML/CSS |
-| Action ledger | Timestamped states with a visible coral interruption and citron revision splice | Semantic ordered list + CSS rules |
-| Workspace tabs | Browser and Notes with accessible tab semantics | Buttons + ARIA tab pattern |
-| Research browser | Browser-like source header, active source detail, evidence rail | Semantic HTML/CSS; no iframe |
-| Evidence content | Four clearly labeled synthetic findings linked to official sources | Authored dataset + anchor elements |
-| Decision brief | Requirements, comparison, recommendation, citations | Semantic article/table/list |
-| Responsive behavior | 30/70 desktop split; stacked voice/workspace under 800px | CSS media queries |
-| Motion | One state-pulse and plan-revision entrance; disabled for reduced motion | CSS animation |
+| Ingredient | Commitment |
+| --- | --- |
+| Command rail | Identity, theme, elapsed time, setup, Activity, Follow agent when paused, new session, export, Stop |
+| Agent | Reactive body/waveform driven by state and actual PCM energy; start, mute, and Stop controls |
+| Conversation | Latest exchange in view; persisted History drawer for older turns; always-available typed composer |
+| Documents | Import, revision-safe editing, preserved drafts, per-file menu, undo, Markdown export |
+| Sheets | CSV import/export, formulas, formats, visible results, lightweight chart, 1,000×26 cap |
+| Planner | Tasks, due/start/end scheduling, overlap warnings, CSV/ICS export |
+| Research | Exact-query collections, result list, summary, source reader, inspectable URLs |
+| Activity | Objective, plan, tool ledger, interruption state, coordinated agent change receipts and undo |
+| Persistence | IndexedDB workspace v2 for artifacts, research, history, trash, and receipts; secrets excluded |
+| Responsive behavior | Two-column desktop; stacked agent/workspace and horizontally scrolling artifact rails on mobile |
 
 ## Constraints
 
-- Warm near-black and graphite carry the page; ivory is the main text; electric citron marks live and revised states; coral is exclusive to interruption/error.
-- No decorative gradients, glass effects, neon glow, generic metric cards, or sci-fi HUD styling.
-- The browser workspace must remain the largest object in the first viewport.
-- Controls remain familiar, keyboard accessible, and visibly focused.
-- Do not invent customers, performance benchmarks, or live research claims.
+- Preserve the existing cool-neutral identity and state-color rules.
+- Keep the workspace larger than the agent rail.
+- Do not surface human keystrokes as agent activity.
+- Do not show old chat, task status, or research context permanently.
+- Avoid glass, glow, decorative gradients, fake metrics, nested card mosaics, and unsupported automation claims.
+- Keep every core flow keyboard accessible and respect reduced motion.
 
-## Unresolved decision
+## Showcase prompt
 
-The exact live Voice Agent WebSocket payload will follow AssemblyAI's current API documentation and remain behind the normalized adapter boundary.
+“Turn this event brief into a budget, schedule, and final document. Actually, make it 30 guests, cap spending at €800, and keep Friday free.”
+
+This should visibly demonstrate tool-aware navigation, interruption safety, coordinated edits, grouped undo, and AssemblyAI’s role in realtime redirection.

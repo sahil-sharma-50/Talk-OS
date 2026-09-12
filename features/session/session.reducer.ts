@@ -1,6 +1,12 @@
 import { initialSessionState } from "./session.fixtures";
 import type { Activity, SessionEvent, SessionState } from "./session.types";
 
+function joinTranscriptDelta(previous: string, next: string): string {
+  if (!previous || !next || /\s$/.test(previous) || /^\s/.test(next)) return `${previous}${next}`;
+  if (/^[.,!?;:%)\]}’”]/.test(next) || /[([{\/'“‘—-]$/.test(previous)) return `${previous}${next}`;
+  return `${previous} ${next}`;
+}
+
 function updateActivity(
   activities: Activity[],
   actionId: string,
@@ -27,8 +33,10 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       return { ...state, voiceState: event.voiceState, error: null };
     case "TRANSCRIPT_PARTIAL": {
       if (!event.text) return state;
-      const text = state.partialTranscript?.speaker === event.speaker
-        ? `${state.partialTranscript.text}${event.text}`
+      const text = event.replace
+        ? event.text
+        : state.partialTranscript?.speaker === event.speaker
+        ? joinTranscriptDelta(state.partialTranscript.text, event.text)
         : event.text;
       return {
         ...state,

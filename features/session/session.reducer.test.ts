@@ -98,6 +98,29 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("keeps word deltas readable without adding spaces before punctuation", () => {
+    const state = reduce([
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "Hi,", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "I'm", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "your", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "TalkOS", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: "agent", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "agent", text: ".", at },
+    ]);
+
+    expect(state.partialTranscript?.text).toBe("Hi, I'm your TalkOS agent.");
+  });
+
+  it("replaces cumulative user transcript partials instead of duplicating them", () => {
+    const state = reduce([
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Plan", replace: true, at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Plan my", replace: true, at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Plan my week", replace: true, at },
+    ]);
+
+    expect(state.partialTranscript).toEqual({ speaker: "user", text: "Plan my week" });
+  });
+
   it("starts a new partial transcript when the speaker changes", () => {
     const state = reduce([
       { type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Build it", at },

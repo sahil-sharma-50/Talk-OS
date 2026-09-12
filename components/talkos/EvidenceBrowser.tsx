@@ -39,7 +39,7 @@ export function EvidenceBrowser({ evidence }: { evidence: Evidence[] }) {
             <div className="browser-empty">
               <Search size={30} strokeWidth={1.3} aria-hidden="true" />
               <p>Research surface ready</p>
-              <span>Run the demo to watch official evidence arrive.</span>
+              <span>Start a live session to watch evidence arrive.</span>
             </div>
           )}
         </article>

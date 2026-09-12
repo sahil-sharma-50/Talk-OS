@@ -2,55 +2,47 @@
 
 <!-- impeccable:product-schema 1 -->
 
-## Platform
+## Platform and users
 
-web
+TalkOS is a browser-based productivity workspace agent for founders, operators, students, and knowledge workers who need to turn a conversation into usable files—not another chat transcript.
 
-## Users
+## Product purpose
 
-The hackathon prototype serves startup operators, technical founders, and procurement-minded knowledge workers who need to compare software vendors while actively directing the research.
+The user states an outcome by voice or text. TalkOS inspects the local workspace, forms a visible plan, and works across Documents, Sheets, Planner, and source-backed Research. It can create a brief, calculate a budget, schedule the work, and keep those artifacts coordinated when a constraint changes.
 
-## Product Purpose
+## Highest-value AssemblyAI use case
 
-TalkOS lets a user speak to an AI agent while watching it gather evidence, interrupt the work at any moment, and see the active plan change before the agent continues. A successful session produces a concise, traceable decision brief instead of an opaque answer.
+TalkOS is built for mid-task redirection. While the agent is researching or updating files, the user can interrupt naturally—“make it 30 guests, cap it at €800, and keep Friday free.” AssemblyAI provides the realtime speech state and interruption path. TalkOS aborts active tools, rejects late stale results, revises the task, and applies the related file changes atomically. This is materially more useful than dictation: the conversation controls live work without sacrificing consistency.
 
-## Positioning
+## Winning demonstration
 
-TalkOS keeps the user inside an active computer-use loop: talk, watch, interrupt, redirect, and continue without restarting the task. Its defining mechanism is immediate, visible replanning after a spoken interruption.
+1. Give TalkOS a short event brief.
+2. Ask it to create a budget sheet, task plan, schedule, and event document.
+3. Watch the workspace follow the active tool while the Activity drawer records the work.
+4. Interrupt with “30 guests, €800 maximum, and keep Friday free.”
+5. Show the revised artifacts, the single coordinated change receipt, one-click undo, and real CSV/ICS/Markdown exports.
 
-## Operating Context
+## Capabilities and boundaries
 
-The flagship demonstration compares Supabase and Firebase for an early-stage company. The user narrows the work to official sources, compliance, and a sub-$100 monthly starting cost while the agent is already researching. The judged workflow lasts 60–90 seconds and ends in a cited recommendation.
+- Realtime AssemblyAI voice, streamed transcripts, typed messages in the same session, barge-in, and client tools.
+- Documents with TXT/Markdown/text-PDF import, revision checks, draft preservation, undo, and Markdown export.
+- Sheets with CSV import/export, 1,000×26 limits, arithmetic and common formulas, formatting, and a lightweight chart.
+- Planner with tasks, manual dates and times, conflict detection, task CSV, and calendar ICS export.
+- Tavily-backed public-web research grouped by exact search query, with inspectable URLs, extracted text, and summaries.
+- Atomic cross-tool changes with revision validation and one visible undo receipt.
+- Local IndexedDB persistence for artifacts, conversation history, research, trash, and changes.
+- No Google/OAuth dependency, cloud database, fake evidence, autonomous purchasing, or unrestricted computer control.
 
-## Capabilities and Constraints
+## Privacy and cost model
 
-- Real AssemblyAI voice sessions provide realtime transcription, turn handling, interruption, and tool calls when configured.
-- Deterministic demo mode exercises the same normalized session events without credentials.
-- The workspace contains controlled Browser and Notes views.
-- Actions are read-only; general desktop control, arbitrary visual clicking, authenticated browsing, terminal access, and cloud accounts are excluded.
-- The AssemblyAI API key remains server-only and the browser receives a short-lived credential.
-- User-visible plans and actions never expose chain-of-thought.
+Users can bring AssemblyAI and Tavily credentials for the current page session; AssemblyAI may alternatively be configured by the deployment. Credentials are never written to IndexedDB. Workspace content remains on the device. The application requires no paid database and can run on a basic Next.js deployment.
 
-## Brand Commitments
+## Product principles
 
-The product name is TalkOS. The approved voice is concise, composed, evidence-led, and operational. The interface should feel like an analyst's working instrument, not a generic chatbot or fictional operating system.
-
-## Evidence on Hand
-
-- Product requirements: `talkos-prd.md` in the parent project workspace.
-- Hackathon criteria: `hackathon.md` in the parent project workspace.
-- Approved build design: `docs/superpowers/specs/2026-09-12-talkos-demo-design.md`.
-- The vendor comparison uses clearly labeled demonstration data and links to official Supabase and Firebase pages. No customer claims, testimonials, or performance benchmarks exist and none may be fabricated.
-
-## Product Principles
-
-- Make interruption the memorable proof, not a hidden technical feature.
-- Show what changed and why in one glance.
-- Prefer a reliable, narrow workflow over broad but fragile automation.
-- Keep every recommendation traceable to visible evidence.
-- Preserve user control whenever the agent acts or speaks.
-
-## Accessibility & Inclusion
-
-Core controls must be keyboard accessible, status changes must be announced without overwhelming assistive technology, focus must remain visible, and nonessential motion must respect reduced-motion preferences. Demo mode remains usable if microphone permission is unavailable.
-
+- Produce inspectable work, not chat-only answers.
+- Let the workspace follow the agent until the human chooses a different tab.
+- Make searches, plans, interruptions, coordinated edits, and undo visible.
+- Preserve human drafts and reject stale agent writes.
+- Cite public facts with links; never invent evidence.
+- Keep spoken updates short while the workspace holds the detail.
+- Maintain keyboard access, visible focus, clear status, and reduced-motion support.

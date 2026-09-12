@@ -82,7 +82,7 @@ type Timed = { at: string };
 export type SessionEvent =
   | (Timed & { type: "CONNECTION_CHANGED"; connected: boolean; mode?: "demo" | "live" })
   | (Timed & { type: "VOICE_STATE_CHANGED"; voiceState: VoiceState })
-  | (Timed & { type: "TRANSCRIPT_PARTIAL"; speaker: Speaker; text: string })
+  | (Timed & { type: "TRANSCRIPT_PARTIAL"; speaker: Speaker; text: string; replace?: boolean })
   | (Timed & { type: "TALK_TURN_FINALIZED"; speaker: Speaker; text: string })
   | (Timed & { type: "TURNS_HYDRATED"; turns: ConversationTurn[] })
   | (Timed & { type: "OBJECTIVE_SET"; objective: string })

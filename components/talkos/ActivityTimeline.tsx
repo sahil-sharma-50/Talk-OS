@@ -15,7 +15,7 @@ export function ActivityTimeline({ activities, planRevision }: Pick<SessionState
     <section className="activity" aria-label="Agent activity" aria-live="polite">
       <div className="section-heading">
         <h2>Action ledger</h2>
-        <span>{activities.length || "—"}</span>
+        <span>{activities.length}</span>
       </div>
       <ol className="activity__list">
         {activities.length === 0 ? <li className="empty-copy">Waiting for an objective.</li> : null}

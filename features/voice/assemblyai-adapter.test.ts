@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssemblyAIAdapter, normalizeVoiceEvent } from "./assemblyai-adapter";
-import { LIVE_SYSTEM_PROMPT, workspaceTools } from "./research-tools";
+import { LIVE_GREETING, LIVE_SYSTEM_PROMPT, workspaceTools } from "./research-tools";
 import { createWorkspace } from "@/features/workspace/workspace-model";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AssemblyAI session setup", () => {
-  it("binds the stored agent before registering tools and streaming audio", async () => {
+  it("configures the stored agent greeting, workspace prompt, and tools before it becomes ready", async () => {
     class TestSocket extends EventTarget {
       static OPEN = 1;
       readyState = 1;
@@ -49,7 +49,13 @@ describe("AssemblyAI session setup", () => {
       expect(getUserMedia).not.toHaveBeenCalled();
       socket.dispatchEvent(new Event("open"));
       expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
-        type: "session.update", session: { agent_id: "agent-123" },
+        type: "session.update",
+        session: {
+          agent_id: "agent-123",
+          greeting: LIVE_GREETING,
+          system_prompt: LIVE_SYSTEM_PROMPT,
+          tools: workspaceTools,
+        },
       });
       socket.send.mockClear();
       const audio = new MessageEvent("message", { data: new ArrayBuffer(2) });
@@ -57,13 +63,11 @@ describe("AssemblyAI session setup", () => {
       expect(socket.send).not.toHaveBeenCalled();
 
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
-      expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
-        type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT },
-      });
+      expect(socket.send).not.toHaveBeenCalled();
       await adapter.startListening();
       expect(getUserMedia).toHaveBeenCalledOnce();
       port.onmessage?.(audio);
-      expect(JSON.parse(socket.send.mock.calls[1][0])).toEqual({ type: "input.audio", audio: "AAA=" });
+      expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({ type: "input.audio", audio: "AAA=" });
 
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.stopped" }) }));
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "transcript.user", text: "Change it" }) }));
@@ -139,14 +143,13 @@ describe("AssemblyAI session setup", () => {
 
     socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
     expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toEqual([
-      { type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT } },
       { type: "conversation.message", role: "user", content: "Make a launch plan" },
       { type: "reply.create" },
     ]);
     await adapter.disconnect();
   });
 
-  it("reports microphone energy to the reactive bot", async () => {
+  it("reports microphone energy to the reactive orb", async () => {
     class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
     const socket = new TestSocket();
     const port = { onmessage: null as null | ((event: MessageEvent<ArrayBuffer>) => void) };
@@ -190,8 +193,8 @@ describe("normalizeVoiceEvent", () => {
 
   it("maps transcript deltas without finalizing them", () => {
     expect(
-      normalizeVoiceEvent({ type: "transcript.user.delta", delta: "Compare Supa" }),
-    ).toMatchObject({ type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Compare Supa" });
+      normalizeVoiceEvent({ type: "transcript.user.delta", text: "Compare Supabase" }),
+    ).toMatchObject({ type: "TRANSCRIPT_PARTIAL", speaker: "user", text: "Compare Supabase", replace: true });
   });
 
   it("marks an interrupted reply as an interruption state", () => {

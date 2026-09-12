@@ -33,7 +33,9 @@ export const workspaceTools: FunctionTool[] = [
   tool("export_document", "Prepare a document as a Markdown download payload.", { document_id: artifactId }, ["document_id"]),
 ];
 
-export const LIVE_SYSTEM_PROMPT = `You are TalkOS, an everyday task copilot operating a visible workspace through natural conversation.
+export const LIVE_GREETING = "Hi, I’m TalkOS. What would you like to get done today?";
+
+export const LIVE_SYSTEM_PROMPT = `You are TalkOS, a general productivity agent that controls a visible workspace through natural conversation.
 The workspace has Documents, Sheets, Planner, and Research. Inspect it before claiming to know its contents, create a short plan, then do useful work.
 Use Sheets for calculations, Planner for tasks and dates, Documents for deliverables, and Research only when current public facts help. Open the tool you are using.
 When one request changes related artifacts, use apply_workspace_changes so the user can undo it as one action. Never invent sources or claim a change succeeded before its result confirms it.

@@ -89,6 +89,12 @@ afterEach(() => {
 });
 
 describe("TalkOSApp", () => {
+  it("keeps the empty latest-conversation region ready for announcements", () => {
+    render(<TalkOSApp />);
+
+    expect(screen.getByRole("region", { name: /latest conversation/i })).toBeEmptyDOMElement();
+  });
+
   it("allows keyboard users to switch between Documents and Research", async () => {
     const user = userEvent.setup();
     render(<TalkOSApp voiceAdapterFactory={voiceFromController(completedDemoController)} />);
@@ -122,7 +128,7 @@ describe("TalkOSApp", () => {
     expect(screen.getByRole("tabpanel", { name: /settings/i })).toHaveTextContent(/assemblyai/i);
   });
 
-  it("shows the current live exchange and keeps older turns in History", async () => {
+  it("prioritizes the newest user message in the compact exchange", async () => {
     const user = userEvent.setup();
     const voice = voiceFromController((emit) => ({
       start() {
@@ -136,7 +142,10 @@ describe("TalkOSApp", () => {
     render(<TalkOSApp voiceAdapterFactory={voice} />);
     await user.click(screen.getByRole("button", { name: /start voice agent/i }));
 
-    expect(screen.getByRole("region", { name: /live voice transcript/i })).toHaveTextContent("Wait, target developers");
+    const exchange = screen.getByRole("region", { name: /latest conversation/i });
+    expect(exchange).toHaveTextContent("Wait, target developers");
+    expect(within(exchange).getByText("Wait, target developers").closest("[data-speaker]"))
+      .toHaveAttribute("data-speaker", "user");
     expect(screen.queryByText("Earlier request")).not.toBeInTheDocument();
     expect(screen.queryByText("Earlier answer")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /message talkos/i })).not.toBeInTheDocument();
@@ -148,12 +157,31 @@ describe("TalkOSApp", () => {
     expect(screen.getByText("Earlier answer")).toBeVisible();
   });
 
+  it("shows the latest user and agent messages as one exchange", async () => {
+    const user = userEvent.setup();
+    const voice = voiceFromController((emit) => ({
+      start() {
+        emit({ type: "TALK_TURN_FINALIZED", speaker: "user", text: "Draft the launch brief", at });
+        emit({ type: "TALK_TURN_FINALIZED", speaker: "agent", text: "I drafted it in Documents.", at });
+      },
+      interrupt() {}, finish() {}, dispose() {},
+    }));
+    render(<TalkOSApp voiceAdapterFactory={voice} />);
+
+    await user.click(screen.getByRole("button", { name: /start voice agent/i }));
+
+    const exchange = screen.getByRole("region", { name: /latest conversation/i });
+    expect(within(exchange).getByText("Draft the launch brief").closest("[data-speaker]"))
+      .toHaveAttribute("data-speaker", "user");
+    expect(within(exchange).getByText("I drafted it in Documents.").closest("[data-speaker]"))
+      .toHaveAttribute("data-speaker", "agent");
+  });
+
   it("uses the central voice agent as the only session control", () => {
     render(<TalkOSApp voiceAdapterFactory={voiceFromController(completedDemoController)} />);
 
     const voiceControl = screen.getByRole("button", { name: /start voice agent/i });
     expect(voiceControl).toBeVisible();
-    expect(voiceControl.querySelector(".voice-sphere")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /run fallback demo/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /interrupt agent/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reset conversation/i })).not.toBeInTheDocument();
@@ -193,7 +221,7 @@ describe("TalkOSApp", () => {
     expect(screen.queryByRole("complementary", { name: /activity drawer/i })).not.toBeInTheDocument();
   });
 
-  it("keeps History mounted while it exits to the left", async () => {
+  it("keeps History mounted while it closes downward", async () => {
     const user = userEvent.setup();
     render(<TalkOSApp />);
     await user.click(screen.getByRole("button", { name: /history/i }));
@@ -240,7 +268,7 @@ describe("TalkOSApp", () => {
     expect(screen.getByText(/endpoint detected/i)).toBeVisible();
   });
 
-  it("follows tool work until the user manually chooses a workspace", async () => {
+  it("always follows agent workspace changes after manual navigation", async () => {
     const user = userEvent.setup();
     let runtime: WorkspaceRuntime | undefined;
     const factory = (_credentials?: VoiceCredentials, nextRuntime?: WorkspaceRuntime): VoiceAdapter => {
@@ -255,18 +283,12 @@ describe("TalkOSApp", () => {
     render(<TalkOSApp voiceAdapterFactory={factory} />);
     await user.click(screen.getByRole("button", { name: /start voice agent/i }));
 
-    const follow = screen.getByRole("button", { name: /follow agent/i });
-    expect(follow).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /follow agent/i })).not.toBeInTheDocument();
     act(() => runtime?.setActiveView?.("research"));
     expect(screen.getByRole("tabpanel", { name: /research/i })).toBeVisible();
 
     await user.click(screen.getByRole("tab", { name: /documents/i }));
-    expect(follow).toHaveAttribute("aria-pressed", "false");
     act(() => runtime?.setActiveView?.("sheets"));
-    expect(screen.getByRole("tabpanel", { name: /documents/i })).toBeVisible();
-
-    await user.click(follow);
-    expect(follow).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("tabpanel", { name: /sheets/i })).toBeVisible();
   });
 

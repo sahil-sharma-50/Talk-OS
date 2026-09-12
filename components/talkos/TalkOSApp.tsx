@@ -1,6 +1,6 @@
 "use client";
 
-import { HelpCircle, LocateFixed, RotateCcw, Square } from "lucide-react";
+import { HelpCircle, RotateCcw, Square } from "lucide-react";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialSessionState } from "@/features/session/session.fixtures";
 import { sessionReducer } from "@/features/session/session.reducer";
@@ -29,14 +29,11 @@ export function TalkOSApp({
   const [activityOpen, setActivityOpen] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [telemetry, setTelemetry] = useState<VoiceTelemetrySnapshot>(emptyVoiceTelemetry);
-  const [followAgent, setFollowAgent] = useState(true);
   const workspaceRef = useRef(workspace);
   const credentialsRef = useRef(credentials);
   const voiceAdapter = useRef<VoiceAdapter | null>(null);
   const connectingRef = useRef<Promise<VoiceAdapter | null> | null>(null);
   const microphoneStartedRef = useRef(false);
-  const followAgentRef = useRef(true);
-  const lastAgentWorkspaceRef = useRef<WorkspaceView>("documents");
   const saveQueueRef = useRef(Promise.resolve());
   const workspaceLoadedRef = useRef(false);
 
@@ -76,15 +73,7 @@ export function TalkOSApp({
     void voiceAdapter.current?.disconnect();
   }, []);
   const emit = useCallback((event: SessionEvent) => dispatch(event), []);
-  const changeWorkspace = useCallback((nextView: WorkspaceView, source: "human" | "agent" = "human") => {
-    if (source === "human") {
-      followAgentRef.current = false;
-      setFollowAgent(false);
-    }
-    if (source === "agent") {
-      lastAgentWorkspaceRef.current = nextView;
-      if (!followAgentRef.current) return;
-    }
+  const changeWorkspace = useCallback((nextView: WorkspaceView) => {
     dispatch({ type: "WORKSPACE_CHANGED", workspace: nextView, at: new Date().toISOString() });
   }, []);
 
@@ -121,7 +110,7 @@ export function TalkOSApp({
       getWorkspace: () => workspaceRef.current,
       setWorkspace: updateWorkspace,
       getTavilyApiKey: () => credentialsRef.current.tavilyApiKey ?? "",
-      setActiveView: (view) => changeWorkspace(view, "agent"),
+      setActiveView: changeWorkspace,
     };
     const adapter = voiceAdapterFactory(completeCredentials, runtime);
     voiceAdapter.current = adapter;
@@ -179,20 +168,19 @@ export function TalkOSApp({
     <main className="talkos-shell">
       <header className="command-rail">
         <div className="brand-lockup">
-          <h1>TalkOS</h1>
-          <span>Everyday task workspace</span>
+          <span className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 28 28" focusable="false">
+              <path d="M7 11v6M11.5 7.5v13M16 10v8M20.5 8.5v11" />
+            </svg>
+          </span>
+          <h1><span>Talk</span><span>OS</span></h1>
+          <span className="brand-tagline">Everyday task workspace</span>
         </div>
         <div className="command-rail__right">
           <ThemeSwitcher />
           <button className="header-button" type="button" onClick={() => changeWorkspace("settings")}>
             <HelpCircle size={16} /> Setup
           </button>
-          <button className="header-button follow-button" type="button" aria-pressed={followAgent} onClick={() => {
-            const next = !followAgentRef.current;
-            followAgentRef.current = next;
-            setFollowAgent(next);
-            if (next) dispatch({ type: "WORKSPACE_CHANGED", workspace: lastAgentWorkspaceRef.current, at: new Date().toISOString() });
-          }}><LocateFixed size={15} /><span>Follow agent</span></button>
           <button className="header-button" type="button" onClick={reset} aria-label="New session">
             <RotateCcw size={15} /> New session
           </button>

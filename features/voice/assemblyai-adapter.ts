@@ -7,6 +7,7 @@ import {
 } from "./voice-adapter.types";
 import {
   executeResearchTool,
+  LIVE_GREETING,
   LIVE_SYSTEM_PROMPT,
   workspaceTools,
   type ResearchToolCall,
@@ -35,6 +36,7 @@ export function normalizeVoiceEvent(message: AssemblyAIEvent): SessionEvent | nu
         type: "TRANSCRIPT_PARTIAL",
         speaker: "user",
         text: typeof message.delta === "string" ? message.delta : text,
+        replace: typeof message.delta !== "string",
         at: at(),
       };
     case "transcript.agent.delta":
@@ -230,15 +232,18 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       socket.addEventListener("open", () => {
         socket?.send(JSON.stringify({
           type: "session.update",
-          session: { agent_id: sessionCredentials.agentId },
+          session: {
+            agent_id: sessionCredentials.agentId,
+            greeting: LIVE_GREETING,
+            system_prompt: LIVE_SYSTEM_PROMPT,
+            tools: workspaceTools,
+          },
         }));
       });
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(String(event.data)) as AssemblyAIEvent;
         trackTelemetry(message);
         if (message.type === "session.ready" && socket?.readyState === WebSocket.OPEN) {
-          // Stored-agent binding cannot include inline configuration in the first update.
-          socket.send(JSON.stringify({ type: "session.update", session: { tools: workspaceTools, system_prompt: LIVE_SYSTEM_PROMPT } }));
           sessionReady = true;
           flushText();
         }

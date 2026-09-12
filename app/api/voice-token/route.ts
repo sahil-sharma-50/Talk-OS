@@ -3,11 +3,23 @@ import { NextResponse } from "next/server";
 const TOKEN_TTL_SECONDS = 120;
 const SESSION_LIMIT_SECONDS = 600;
 
-export async function POST() {
-  const apiKey = process.env.ASSEMBLYAI_API_KEY;
-  const agentId = process.env.ASSEMBLYAI_AGENT_ID;
+export async function POST(request: Request) {
+  let supplied: { apiKey?: unknown; agentId?: unknown } = {};
+  try {
+    if (request.headers.get("content-type")?.includes("application/json")) {
+      const body = await request.text();
+      if (body.trim()) supplied = JSON.parse(body) as typeof supplied;
+    }
+  } catch {
+    return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
+  }
+  const apiKey = typeof supplied.apiKey === "string" && supplied.apiKey.trim() ? supplied.apiKey.trim() : process.env.ASSEMBLYAI_API_KEY;
+  const agentId = typeof supplied.agentId === "string" && supplied.agentId.trim() ? supplied.agentId.trim() : process.env.ASSEMBLYAI_AGENT_ID;
   if (!apiKey || !agentId) {
     return NextResponse.json({ error: "voice_not_configured" }, { status: 503 });
+  }
+  if (agentId.includes("@")) {
+    return NextResponse.json({ error: "invalid_agent_id" }, { status: 400 });
   }
 
   const controller = new AbortController();

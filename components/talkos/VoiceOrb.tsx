@@ -28,12 +28,10 @@ export function VoiceOrb({ state, onStart, level = 0 }: { state: VoiceState; onS
   return (
     <section className="voice-state" data-state={state} aria-live="polite" style={{ "--voice-level": level.toFixed(3) } as React.CSSProperties}>
       <button className="voice-agent" type="button" onClick={onStart} disabled={isActive} aria-label={isActive ? `Voice agent ${stateCopy[state]}` : "Start voice agent"}>
-        <span className="voice-sphere" aria-hidden="true">
-          <span className="voice-sphere__ring" />
-          <span className="voice-sphere__core" />
-          <span className="voice-sphere__signal">
-            <i /><i /><i />
-          </span>
+        <span className="voice-orb" aria-hidden="true">
+          <span className="voice-orb__aura" />
+          <span className="voice-orb__shape"><i /><i /></span>
+          <span className="voice-orb__signal"><i /><i /><i /></span>
         </span>
         <span className="voice-agent__copy">
           <strong>{stateCopy[state]}</strong>

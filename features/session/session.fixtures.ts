@@ -14,13 +14,13 @@ export const initialSessionState: SessionState = {
   invalidatedActionIds: [],
   evidence: [],
   brief: null,
-  activeWorkspace: "browser",
+  activeWorkspace: "documents",
   notesHasUpdate: false,
   error: null,
 };
 
 export const decisionBrief: DecisionBrief = {
-  title: "Supabase vs Firebase — vendor decision",
+  title: "Supabase vs Firebase: vendor decision",
   updatedAt: "2026-09-12T12:00:00.000Z",
   requirements: ["Official sources only", "Prioritize compliance", "Pricing under $100/month"],
   comparison: [

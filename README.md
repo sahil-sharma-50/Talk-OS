@@ -1,16 +1,29 @@
 # TalkOS
 
 [![CI](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml)
+[![Live on Vercel](https://img.shields.io/badge/Vercel-Live-000000?logo=vercel&logoColor=white)](https://talk-os-app.vercel.app/)
 
 TalkOS is a voice-directed productivity workspace. Speak an outcome and the agent can coordinate documents, working spreadsheets, plans, source-backed research, visual canvases, and live dashboards in one browser workspace.
 
 The interaction is built for correction while work is happening. If a user interrupts with a new constraint, TalkOS cancels active work, rejects stale results, revises the task, and records the coordinated change as an undoable activity.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsahil-sharma-50%2FTalk-OS)
-
 ![TalkOS product overview](assets/talk-os-image.png)
 
-## Highlights
+## How it works and highlights
+
+```mermaid
+flowchart LR
+  User["User in browser"] --> UI["TalkOS workspace"]
+  UI --> Session[("sessionStorage credentials")]
+  UI --> Data[("IndexedDB workspace")]
+  UI --> Token["/api/voice-token"]
+  Token --> AAI["AssemblyAI token service"]
+  UI --> Realtime["AssemblyAI realtime WebSocket"]
+  UI --> Research["/api/research"]
+  Research --> Tavily["Tavily API"]
+```
+
+The browser owns the workspace state and editors. `app/api/voice-token` exchanges an AssemblyAI key for a short-lived session token; the browser then opens the realtime WebSocket directly. `app/api/research` proxies constrained Tavily search and extraction requests. Neither route stores credentials or workspace data. See [Architecture](docs/ARCHITECTURE.md) for the module map and data flow.
 
 - Realtime voice sessions powered by AssemblyAI, with live captions, interruption, mute, and recovery controls.
 - Documents with Markdown editing, TXT/Markdown/text-PDF import, section-aware composition, embedded canvas and sheet snapshots, and portable Markdown export.
@@ -41,30 +54,33 @@ The interaction is built for correction while work is happening. If a user inter
 
 ## Run locally
 
-Clone and install the exact dependency versions from the lockfile:
+Clone the repository:
 
 ```bash
 git clone https://github.com/sahil-sharma-50/Talk-OS.git
 cd Talk-OS
-npm ci
-npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-TalkOS starts without server environment variables. Open **Settings** in the app and save your AssemblyAI API key, AssemblyAI Agent ID, and optional Tavily API key. The app keeps these values in tab-scoped `sessionStorage`; they are cleared when that browser tab session ends.
-
-For a local development fallback, copy the example file and add credentials:
+Copy the example environment file before running the project. On Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env.local
 ```
 
+On macOS or Linux:
+
 ```bash
 cp .env.example .env.local
 ```
 
-Never commit `.env.local` or any other populated environment file.
+Then install the exact dependency versions and start the development server:
+
+```bash
+npm ci
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). TalkOS can start with the empty example values. Open **Settings** in the app and provide your AssemblyAI API key, AssemblyAI Agent ID, and optional Tavily API key. You may instead place those credentials in `.env.local` for local development. Never commit `.env.local` or any populated environment file.
 
 ## Available commands
 
@@ -79,37 +95,6 @@ Never commit `.env.local` or any other populated environment file.
 | `npm run test:run` | Run the complete test suite once |
 | `npm run check` | Run lint, types, tests, and the production build |
 
-## How it works
-
-```mermaid
-flowchart LR
-  User["User in browser"] --> UI["TalkOS workspace"]
-  UI --> Session[("sessionStorage credentials")]
-  UI --> Data[("IndexedDB workspace")]
-  UI --> Token["/api/voice-token"]
-  Token --> AAI["AssemblyAI token service"]
-  UI --> Realtime["AssemblyAI realtime WebSocket"]
-  UI --> Research["/api/research"]
-  Research --> Tavily["Tavily API"]
-```
-
-The browser owns the workspace state and editors. `app/api/voice-token` exchanges an AssemblyAI key for a short-lived session token; the browser then opens the realtime WebSocket directly. `app/api/research` proxies constrained Tavily search and extraction requests. Neither route stores credentials or workspace data.
-
-See [Architecture](docs/ARCHITECTURE.md) for the module map and data flow.
-
-## Deploy to Vercel
-
-The default public deployment uses credentials supplied by each visitor, so no Vercel environment variables are required.
-
-1. Select **Deploy with Vercel** above or import this GitHub repository in the Vercel dashboard.
-2. Keep the repository root as the project root.
-3. Leave environment variables empty.
-4. Deploy, open the HTTPS URL, and add your own credentials in TalkOS **Settings**.
-
-`vercel.json` selects the Next.js framework and reproducible npm install/build commands. Pushes and pull requests can produce Vercel preview deployments after the repository is connected.
-
-See [Deployment](docs/DEPLOYMENT.md) for preview checks, troubleshooting, and the optional server-funded mode.
-
 ## Privacy and security
 
 - Workspace artifacts, conversation history, research, trash, and activity receipts persist locally in IndexedDB.
@@ -120,25 +105,6 @@ See [Deployment](docs/DEPLOYMENT.md) for preview checks, troubleshooting, and th
 - Production ignores server-side API keys unless `TALKOS_ALLOW_SERVER_CREDENTIALS=true` is explicitly enabled.
 
 Read [Security](SECURITY.md) before enabling server-funded credentials.
-
-## Current limits
-
-- Sheets support columns `A` through `Z` and rows `1` through `1000`.
-- Formula expressions are limited to 1,024 characters and 128 dependent cells. TalkOS implements a focused spreadsheet formula set rather than full Excel compatibility.
-- PDF import requires selectable text; scanned documents need OCR first.
-- Canvas and dashboard JSON can be exported, but matching JSON import flows are not available yet.
-- Workspace state is local to one browser profile and is not synchronized between tabs or devices.
-
-## Documentation
-
-- [Product definition](PRODUCT.md)
-- [Design system](DESIGN.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Deployment](docs/DEPLOYMENT.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-
-Source ownership notes are available in [`app`](app/README.md), [`components/talkos`](components/talkos/README.md), and [`features`](features/README.md).
 
 ## Contributing and license
 

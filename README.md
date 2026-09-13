@@ -83,14 +83,14 @@ Never commit `.env.local` or any other populated environment file.
 
 ```mermaid
 flowchart LR
-  User[User in browser] --> UI[TalkOS workspace]
-  UI --> Session[(sessionStorage credentials)]
-  UI --> Data[(IndexedDB workspace)]
-  UI --> Token[/api/voice-token]
-  Token --> AAI[AssemblyAI token service]
-  UI --> Realtime[AssemblyAI realtime WebSocket]
-  UI --> Research[/api/research]
-  Research --> Tavily[Tavily API]
+  User["User in browser"] --> UI["TalkOS workspace"]
+  UI --> Session[("sessionStorage credentials")]
+  UI --> Data[("IndexedDB workspace")]
+  UI --> Token["/api/voice-token"]
+  Token --> AAI["AssemblyAI token service"]
+  UI --> Realtime["AssemblyAI realtime WebSocket"]
+  UI --> Research["/api/research"]
+  Research --> Tavily["Tavily API"]
 ```
 
 The browser owns the workspace state and editors. `app/api/voice-token` exchanges an AssemblyAI key for a short-lived session token; the browser then opens the realtime WebSocket directly. `app/api/research` proxies constrained Tavily search and extraction requests. Neither route stores credentials or workspace data.

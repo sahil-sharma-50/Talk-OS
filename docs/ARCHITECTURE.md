@@ -6,22 +6,22 @@ TalkOS is a client-centered Next.js application. The browser owns the product st
 
 ```mermaid
 flowchart TB
-  subgraph Browser
-    App[TalkOSApp]
-    Components[Workspace components]
-    Features[Feature modules]
-    IDB[(IndexedDB)]
-    Session[(sessionStorage)]
+  subgraph Browser["Browser"]
+    App["TalkOSApp"]
+    Components["Workspace components"]
+    Features["Feature modules"]
+    IDB[("IndexedDB")]
+    Session[("sessionStorage")]
   end
 
-  subgraph Next[Next.js server routes]
-    VoiceRoute[POST /api/voice-token]
-    ResearchRoute[POST /api/research]
+  subgraph Next["Next.js server routes"]
+    VoiceRoute["POST /api/voice-token"]
+    ResearchRoute["POST /api/research"]
   end
 
-  AssemblyToken[AssemblyAI token API]
-  AssemblyWS[AssemblyAI realtime WebSocket]
-  Tavily[Tavily API]
+  AssemblyToken["AssemblyAI token API"]
+  AssemblyWS["AssemblyAI realtime WebSocket"]
+  Tavily["Tavily API"]
 
   App --> Components
   Components --> Features

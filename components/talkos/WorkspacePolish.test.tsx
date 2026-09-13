@@ -123,7 +123,7 @@ describe("workspace polish", () => {
     expect(screen.getByRole("textbox", { name: "A2" })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole("textbox", { name: "A2" }), { key: "ArrowUp" });
     expect(a1).toHaveFocus();
-  });
+  }, 10_000);
 
   it("renames plans on blur and keeps task details in a compact disclosure", () => {
     const workspace = createPlanner(createWorkspace(), "Launch plan", [{

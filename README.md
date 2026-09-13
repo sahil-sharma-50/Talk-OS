@@ -9,7 +9,7 @@ The interaction is built for correction while work is happening. If a user inter
 
 ![TalkOS product overview](assets/talk-os-image.png)
 
-## How it works and highlights
+## How it works
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,8 @@ flowchart LR
 
 The browser owns the workspace state and editors. `app/api/voice-token` exchanges an AssemblyAI key for a short-lived session token; the browser then opens the realtime WebSocket directly. `app/api/research` proxies constrained Tavily search and extraction requests. Neither route stores credentials or workspace data. See [Architecture](docs/ARCHITECTURE.md) for the module map and data flow.
 
+## Highlights
+
 - Realtime voice sessions powered by AssemblyAI, with live captions, interruption, mute, and recovery controls.
 - Documents with Markdown editing, TXT/Markdown/text-PDF import, section-aware composition, embedded canvas and sheet snapshots, and portable Markdown export.
 - Sheets with CSV/XLSX import, CSV export, formatting, formulas, charts, row operations, and ranges up to `A1:Z1000`.
@@ -36,21 +38,24 @@ The browser owns the workspace state and editors. `app/api/voice-token` exchange
 
 ## Technology
 
-- Next.js 16 App Router and React 19
-- TypeScript
-- AssemblyAI realtime voice agents
-- Tavily search and extraction
-- IndexedDB and browser session storage
-- Vitest, Testing Library, and ESLint
-- Vercel deployment and GitHub Actions CI
+| Area | Technology |
+| --- | --- |
+| Application | Next.js 16 App Router, React 19, and TypeScript |
+| Voice | AssemblyAI realtime voice agents |
+| Research | Tavily search and content extraction |
+| Storage | IndexedDB and browser session storage |
+| Quality | Vitest, Testing Library, TypeScript, and ESLint |
+| Delivery | Vercel and GitHub Actions CI |
 
 ## Requirements
 
-- Node.js 24.x
-- npm 11 or a compatible npm version supplied with Node.js 24
-- A modern browser with microphone support
-- An AssemblyAI API key and published Agent ID for voice features
-- An optional Tavily API key for live research
+| Requirement | Details |
+| --- | --- |
+| Node.js | Version 24.x |
+| npm | Version 11 or a compatible version supplied with Node.js 24 |
+| Browser | A modern browser with microphone support |
+| AssemblyAI | An API key and published Agent ID for voice features |
+| Tavily | An optional API key for live research |
 
 ## Run locally
 

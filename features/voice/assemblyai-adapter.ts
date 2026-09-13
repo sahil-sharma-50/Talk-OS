@@ -132,6 +132,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
   let generation = 0;
   const activeCalls = new Set<AbortController>();
   const activeActionIds = new Set<string>();
+  const handledCallIds = new Set<string>();
 
   const trackTelemetry = (message: AssemblyAIEvent) => {
     const nextTelemetry = recordVoiceTelemetry(telemetry, message, Date.now());
@@ -208,6 +209,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     activeCalls.forEach((controller) => controller.abort());
     activeCalls.clear();
     activeActionIds.clear();
+    handledCallIds.clear();
   };
 
   return {
@@ -300,6 +302,8 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           typeof message.arguments === "object"
         ) {
           const call = message as AssemblyAIEvent & ResearchToolCall;
+          if (handledCallIds.has(call.call_id)) return;
+          handledCallIds.add(call.call_id);
           const requestedWorkspace = workspaceForTool(call.name);
           if (requestedWorkspace) runtime.setActiveView?.(requestedWorkspace);
           const callGeneration = generation;

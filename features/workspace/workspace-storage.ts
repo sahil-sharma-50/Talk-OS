@@ -7,12 +7,15 @@ const CURRENT_KEY = "current";
 function isWorkspace(value: unknown): value is WorkspaceSnapshot {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<WorkspaceSnapshot>;
-  return candidate.version === 2
+  return candidate.version === 4
     && Array.isArray(candidate.documents)
     && typeof candidate.activeDocumentId === "string"
     && Array.isArray(candidate.sources)
     && Array.isArray(candidate.sheets)
     && Array.isArray(candidate.planners)
+    && Array.isArray(candidate.canvases)
+    && !!candidate.canvasAssets && typeof candidate.canvasAssets === "object"
+    && Array.isArray(candidate.dashboards)
     && Array.isArray(candidate.researchCollections)
     && Array.isArray(candidate.trash)
     && Array.isArray(candidate.changeHistory)
@@ -26,20 +29,43 @@ function isWorkspace(value: unknown): value is WorkspaceSnapshot {
 function migrateWorkspace(value: unknown): WorkspaceSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const legacy = value as Record<string, unknown>;
-  if (legacy.version !== 1 || !Array.isArray(legacy.documents) || !Array.isArray(legacy.sources) || !legacy.task) return null;
-  const sources = legacy.sources as WorkspaceSnapshot["sources"];
-  const createdAt = new Date().toISOString();
-  return {
-    version: 2,
-    documents: legacy.documents as WorkspaceSnapshot["documents"],
-    activeDocumentId: typeof legacy.activeDocumentId === "string" ? legacy.activeDocumentId : "",
-    sheets: [], activeSheetId: null, planners: [], activePlannerId: null,
-    sources,
-    researchCollections: sources.length ? [{ id: "research-migrated", query: "Earlier research", summary: "", sourceIds: sources.map((source) => source.id), status: "complete", createdAt }] : [],
-    selectedSourceId: typeof legacy.selectedSourceId === "string" ? legacy.selectedSourceId : null,
-    selectedResearchCollectionId: sources.length ? "research-migrated" : null,
-    task: legacy.task as WorkspaceSnapshot["task"], trash: [], changeHistory: [], conversation: [],
-  };
+  if (legacy.version === 3) {
+    return {
+      ...(legacy as unknown as Omit<WorkspaceSnapshot, "version" | "dashboards" | "activeDashboardId">),
+      version: 4,
+      dashboards: [],
+      activeDashboardId: null,
+    };
+  }
+  if (legacy.version === 2) {
+    return {
+      ...(legacy as unknown as Omit<WorkspaceSnapshot, "version" | "canvases" | "activeCanvasId" | "canvasAssets" | "dashboards" | "activeDashboardId">),
+      version: 4,
+      canvases: [],
+      activeCanvasId: null,
+      canvasAssets: {},
+      dashboards: [],
+      activeDashboardId: null,
+    };
+  }
+  if (legacy.version === 1 && Array.isArray(legacy.documents) && Array.isArray(legacy.sources) && legacy.task) {
+    const sources = legacy.sources as WorkspaceSnapshot["sources"];
+    const createdAt = new Date().toISOString();
+    return {
+      version: 4,
+      documents: legacy.documents as WorkspaceSnapshot["documents"],
+      activeDocumentId: typeof legacy.activeDocumentId === "string" ? legacy.activeDocumentId : "",
+      sheets: [], activeSheetId: null, planners: [], activePlannerId: null,
+      canvases: [], activeCanvasId: null, canvasAssets: {},
+      dashboards: [], activeDashboardId: null,
+      sources,
+      researchCollections: sources.length ? [{ id: "research-migrated", query: "Earlier research", summary: "", sourceIds: sources.map((source) => source.id), status: "complete", createdAt }] : [],
+      selectedSourceId: typeof legacy.selectedSourceId === "string" ? legacy.selectedSourceId : null,
+      selectedResearchCollectionId: sources.length ? "research-migrated" : null,
+      task: legacy.task as WorkspaceSnapshot["task"], trash: [], changeHistory: [], conversation: [],
+    };
+  }
+  return null;
 }
 
 function openDatabase(): Promise<IDBDatabase> {

@@ -165,7 +165,7 @@ Primary actions use Live Green with white text; secondary actions use white or s
 
 ### Workspaces and navigation
 
-Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Documents, Sheets, and Planner expose a left artifact rail with a three-dot menu and a consistent two-row title/action header. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
+Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Documents, Sheets, Planner, Canvas, and Dashboard expose a left artifact rail with a three-dot menu and a consistent title/action header. Canvas uses the neutral dotted work surface for spatial editing. Dashboard uses a responsive four-column data grid whose cards always expose their source and method. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
 
 ## Do's and Don'ts
 

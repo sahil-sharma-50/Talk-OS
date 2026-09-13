@@ -1,12 +1,12 @@
 # TalkOS Canvas and Dashboard — proposed design
 
-Status: draft for product review. Requested work is feasibility and planning; this document does not authorize implementation. Inspected the current working tree on 2026-09-13, including existing uncommitted workspace work.
+Status: implemented on 2026-09-13 after product approval. Canvas uses Fabric.js with a TalkOS-owned semantic scene and history; Dashboard uses explicit source bindings and local selectors.
 
 ## Task 1 feasibility update (2026-09-13)
 
-The development-only integration spike pins `@excalidraw/excalidraw` 0.18.1 and `@dagrejs/dagre` 3.1.1. Excalidraw 0.18.1 declares React/React DOM `^17.0.2 || ^18.2.0 || ^19.0.0`; its transitive Radix Tabs dependency still declares React 18, so the lockfile resolves React and React DOM 18.3.1 with Next 16.3.5. The production build completed with this resolved set.
+The initial Excalidraw 0.18.1 spike passed Next.js build, drawing, image, theme and programmatic-update checks, but failed the required single-history gate: its public API exposes `history.clear` without a supported way to replace or observe native keyboard/menu undo and redo. The implementation therefore uses Fabric.js 7.4.0 with `@dagrejs/dagre` 3.1.1. Fabric supplies drawing, images, shapes, transforms, JSON/SVG/image export and interaction events while TalkOS owns the only history controls.
 
-The selected TalkOS history integration is a canonical scene snapshot/receipt bridge: committed pointer/text/agent transactions supply `before` and `after` scenes, while externally applied scenes use `ExcalidrawImperativeAPI.updateScene` with the documented `CaptureUpdateAction.NEVER` to avoid an echo receipt. The public imperative API exposes `history.clear` only; it does not expose editor undo/redo notifications or a way to replace the editor history. Therefore native keyboard and menu undo/redo cannot yet be safely merged with TalkOS history using public SDK APIs. Do not proceed to the full Canvas implementation until this history boundary is replaced or a supported editor API is found.
+The canonical persisted scene is a renderer-independent array of typed TalkOS elements. The Fabric adapter renders and edits that model; it does not persist Fabric objects or maintain a second semantic graph. This isolates SDK changes, makes voice operations deterministic, and keeps manual and agent changes in one revision-checked Activity stream.
 
 ## Recommendation and feasibility
 
@@ -45,11 +45,11 @@ Current Planner tasks only contain completion, notes, and dates. There is no blo
 
 | Approach | Benefit | Tradeoff |
 | --- | --- | --- |
-| Embedded Excalidraw with a semantic adapter — recommended | Whiteboard gestures, drawing, images, shapes, and a programmatic scene API support the confirmed combined scope. | Voice operations need graph semantics over scene elements; editor and workspace undo must be coordinated. |
+| Fabric.js with a TalkOS scene adapter — selected | Drawing, images, shapes, transforms and export while TalkOS owns history and semantic IDs. | Requires a custom toolbar and connector adapter. |
 | React Flow with custom whiteboard tools | Structured, addressable nodes and edges suit voice edits. | Rebuilding drawing and image workflows adds work for the user's equally important whiteboard use case. |
 | Custom editor or two simultaneous editor engines | Maximum flexibility. | Adds gesture, geometry, selection, persistence, and history complexity; defer. |
 
-Use the MIT-licensed `@excalidraw/excalidraw` editor and a small `@dagrejs/dagre` layout adapter initially; reconsider ELK if nested system boundaries become a requirement. Render the editor through a client-only dynamic wrapper as its Next.js documentation prescribes. tldraw is another viable SDK but requires a production license, so it is not the default dependency. Pin compatible dependency versions after the integration spike rather than assuming this repository's `latest` React/Next dependencies are compatible.
+Use MIT-licensed `fabric` 7.4.0 and `@dagrejs/dagre` 3.1.1. Keep Fabric behind a client-only adapter and reconsider ELK if nested system boundaries become a requirement. tldraw is another viable SDK but requires a production license, so it is not the default dependency.
 
 ### Scope and interaction
 
@@ -57,11 +57,11 @@ Support multiple named boards; pen/freehand strokes; erasing; image upload/paste
 
 Reuse the artifact rail and title/actions pattern, leaving the largest possible drawing area. Load the editor only when Canvas is used. Support keyboard editing, a navigable outline of nodes/connections, visible focus, light/dark themes, and reduced motion. Pointer movement is local transient state; one finished gesture is one persisted change. Panning and selecting are view state, not content revisions or Activity receipts.
 
-Persist board ID/title/revision/time, a versioned Excalidraw scene, sanitized persistent view settings, and an asset manifest. Scene elements are canonical. Store TalkOS semantic roles and artifact references in namespaced element metadata; derive the node/edge index from shapes, bound text, and arrow endpoints. Manual label, position, connection and deletion edits therefore update the same data read by the agent; do not maintain an independently editable second graph. Keep SDK translation inside one scene adapter. Native imported unbound shapes remain editable but do not gain invented relationships.
+Persist board ID/title/revision/time, renderer-independent typed scene elements, sanitized persistent view settings, and an asset manifest. Scene elements are canonical. Manual label, position, connection and deletion edits update the same data read by the agent; do not maintain an independently editable second graph. Keep SDK translation inside one Fabric adapter. Native imported unbound shapes remain editable but do not gain invented relationships.
 
 Persist image files once in an IndexedDB asset store, with references shared by live boards, trash, and retained undo history. Exports include required files. Do not duplicate base64 images in every revision or send image bytes with `read_canvas`. Local imported images have no automatic vision interpretation or image-generation promise. Agent commands can move/resize/delete identified images and manipulate selected strokes. Optional artifact links reference existing document/sheet/planner/research IDs; links do not create automatic two-way synchronization.
 
-Undo ownership is an explicit integration requirement: route Canvas undo/redo and Activity undo through TalkOS's revision-checked history, including manual gestures and agent operations. Clear/bypass the editor's separate content history when applying canonical state so the two stacks cannot diverge. Prototype keyboard, toolbar, text editing and native editor menu paths before accepting the integration. If supported APIs cannot provide coherent behavior, resolve that integration before extending the feature; do not ship two conflicting Undo actions.
+Undo ownership is explicit: Canvas keyboard shortcuts, toolbar actions and Activity undo/redo use TalkOS's revision-checked history for manual gestures and agent operations. Fabric has no separate user-facing history stack, so the adapter re-renders canonical state after each restore.
 
 The model sends semantic operations, not arbitrary JavaScript, HTML, or a whole replacement diagram. Resolve labels using `read_canvas`; editing tools use exact IDs. “Move authentication before onboarding” rewires the flow and arranges the affected nodes; merely changing x coordinates is insufficient. If two nodes match, ask which one rather than guessing. Unaffected user positions stay fixed unless the user requests whole-board arrangement.
 

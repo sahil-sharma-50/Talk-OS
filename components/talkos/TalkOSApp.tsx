@@ -1,7 +1,6 @@
 "use client";
 
 import { HelpCircle, RotateCcw, Square } from "lucide-react";
-import dynamic from "next/dynamic";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialSessionState } from "@/features/session/session.fixtures";
 import { sessionReducer } from "@/features/session/session.reducer";
@@ -16,8 +15,6 @@ import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
 import { VoicePanel } from "./VoicePanel";
 import { Workspace } from "./Workspace";
 import { ThemeSwitcher } from "./ThemeSwitcher";
-
-const CanvasEditor = dynamic(() => import("./CanvasEditor"), { ssr: false });
 
 interface TalkOSAppProps {
   voiceAdapterFactory?: (credentials?: VoiceCredentials, runtime?: WorkspaceRuntime) => VoiceAdapter;
@@ -201,7 +198,6 @@ export function TalkOSApp({
         />
         <Workspace state={state} workspace={workspace} onWorkspaceChange={changeWorkspace} onWorkspaceDataChange={updateWorkspace} credentials={credentials} onCredentialsChange={setCredentials} telemetry={telemetry} activityOpen={activityOpen} onActivityToggle={() => setActivityOpen((open) => !open)} onUndo={undoChange} />
       </div>
-      {process.env.NODE_ENV === "development" ? <CanvasEditor /> : null}
     </main>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Eye, EyeOff, FileText, Globe2, KeyRound, PanelRightOpen, Settings2, ShieldCheck, Table2, Trash2, Undo2 } from "lucide-react";
+import { BarChart3, CalendarDays, Eye, EyeOff, FileText, Globe2, KeyRound, PanelRightOpen, PenTool, Settings2, ShieldCheck, Table2, Trash2, Undo2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionState, WorkspaceView } from "@/features/session/session.types";
 import type { VoiceCredentials } from "@/features/voice/voice-adapter.types";
@@ -12,6 +12,9 @@ import { DocumentWorkspace } from "./DocumentWorkspace";
 import { PlannerWorkspace } from "./PlannerWorkspace";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { SheetsWorkspace } from "./SheetsWorkspace";
+import { CanvasWorkspace } from "./CanvasWorkspace";
+import { DashboardWorkspace } from "./DashboardWorkspace";
+import type { DashboardSource } from "@/features/dashboard/dashboard.types";
 
 interface WorkspaceProps {
   state: SessionState;
@@ -34,6 +37,8 @@ export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceData
     { id: "sheets", label: "Sheets", icon: Table2 },
     { id: "planner", label: "Planner", icon: CalendarDays },
     { id: "research", label: "Research", icon: Globe2 },
+    { id: "canvas", label: "Canvas", icon: PenTool },
+    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
     { id: "settings", label: "Settings", icon: Settings2 },
   ];
 
@@ -41,6 +46,11 @@ export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceData
   if (state.activeWorkspace === "sheets") panel = <SheetsWorkspace workspace={workspace} onChange={onWorkspaceDataChange} />;
   if (state.activeWorkspace === "planner") panel = <PlannerWorkspace workspace={workspace} onChange={onWorkspaceDataChange} />;
   if (state.activeWorkspace === "research") panel = <ResearchWorkspace workspace={workspace} onChange={onWorkspaceDataChange} />;
+  if (state.activeWorkspace === "canvas") panel = <CanvasWorkspace workspace={workspace} onChange={onWorkspaceDataChange} />;
+  if (state.activeWorkspace === "dashboard") panel = <DashboardWorkspace workspace={workspace} onChange={onWorkspaceDataChange} onOpenSource={(source: DashboardSource) => {
+    const next = source.kind === "document" ? { ...workspace, activeDocumentId: source.id } : source.kind === "sheet" ? { ...workspace, activeSheetId: source.id } : source.kind === "planner" ? { ...workspace, activePlannerId: source.id } : { ...workspace, selectedResearchCollectionId: source.id };
+    onWorkspaceDataChange(next); onWorkspaceChange(source.kind === "document" ? "documents" : source.kind === "sheet" ? "sheets" : source.kind === "planner" ? "planner" : "research");
+  }} />;
   if (state.activeWorkspace === "settings") panel = <div className="workspace-sheet settings-view">
     <header><div><h2>Connect your services</h2><p>Credentials remain in this tab and are cleared when it closes.</p></div><KeyRound size={20} aria-hidden="true" /></header>
     <form className="credentials-form" autoComplete="off" onSubmit={(event) => event.preventDefault()}>
@@ -60,7 +70,7 @@ export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceData
   return <section className="workspace" aria-label="Agent workspace">
     <div className="workspace-tabs" role="tablist" aria-label="Workspace views">
       {tabs.map(({ id, label, icon: Icon }) => <button type="button" role="tab" id={`${id}-tab`} aria-selected={state.activeWorkspace === id} aria-controls={`${id}-panel`} onClick={() => onWorkspaceChange(id)} key={id}><Icon size={15} /> {label}</button>)}
-      <span className="workspace-tabs__meta">{workspace.documents.length + workspace.sheets.length + workspace.planners.length} files · {workspace.sources.length} sources</span>
+      <span className="workspace-tabs__meta">{workspace.documents.length + workspace.sheets.length + workspace.planners.length + workspace.canvases.length + workspace.dashboards.length} files · {workspace.sources.length} sources</span>
     </div>
     <div className="workspace-canvas" role="tabpanel" id={`${state.activeWorkspace}-panel`} aria-labelledby={`${state.activeWorkspace}-tab`} aria-label={tabs.find((tab) => tab.id === state.activeWorkspace)?.label}>
       {!activityOpen ? <button className="activity-toggle" type="button" onClick={onActivityToggle} aria-label="Open activity sidebar" aria-expanded="false" aria-controls="activity-drawer" title="Activity"><PanelRightOpen size={17} /></button> : null}

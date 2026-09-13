@@ -124,6 +124,16 @@ describe("TalkOSApp", () => {
     await user.click(screen.getByRole("tab", { name: /planner/i }));
     expect(screen.getByRole("tabpanel", { name: /planner/i })).toHaveTextContent(/create a plan/i);
 
+    await user.click(screen.getByRole("tab", { name: /canvas/i }));
+    expect(screen.getByRole("tabpanel", { name: /canvas/i })).toHaveTextContent(/create a canvas/i);
+    await user.click(screen.getByRole("button", { name: /create a canvas/i }));
+    expect(screen.getByRole("tabpanel", { name: /canvas/i })).toHaveTextContent(/select|sticky|rectangle|draw/i);
+
+    await user.click(screen.getByRole("tab", { name: /dashboard/i }));
+    expect(screen.getByRole("tabpanel", { name: /dashboard/i })).toHaveTextContent(/create a dashboard/i);
+    await user.click(screen.getByRole("button", { name: /create a dashboard/i }));
+    expect(screen.getByRole("tabpanel", { name: /dashboard/i })).toHaveTextContent(/choose sources/i);
+
     await user.click(screen.getByRole("tab", { name: /settings/i }));
     expect(screen.getByRole("tabpanel", { name: /settings/i })).toHaveTextContent(/assemblyai/i);
   });

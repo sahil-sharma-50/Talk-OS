@@ -12,9 +12,11 @@ describe("planner helpers", () => {
   });
 
   it("exports scheduled tasks as a valid calendar without unscheduled tasks", () => {
-    const ics = exportPlannerIcs([...tasks, { id: "c", title: "Buy flowers", completed: false }], "Europe/Berlin");
+    const ics = exportPlannerIcs([{ ...tasks[0], notes: "Bring notes", blockedReason: "Legal; review", riskLevel: "high" }, tasks[1], { id: "c", title: "Buy flowers", completed: false }], "Europe/Berlin");
     expect(ics).toContain("BEGIN:VCALENDAR");
     expect(ics).toContain("SUMMARY:Venue walkthrough");
     expect(ics).not.toContain("Buy flowers");
+    expect(ics).toContain("Blocked: Legal\\; review");
+    expect(ics).toContain("Risk: high");
   });
 });

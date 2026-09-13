@@ -1,6 +1,8 @@
 import type { SessionEvent, WorkspaceView } from "@/features/session/session.types";
 import { addRetrievedSources, applyWorkspaceChanges, createPlanner, createSheet, createWorkspaceDocument, undoLastWorkspaceChange, updateWorkspaceTask } from "@/features/workspace/workspace-model";
 import type { PlannerTask, RetrievedSource, SheetCell, WorkspaceMutation, WorkspaceSnapshot } from "@/features/workspace/workspace.types";
+import { canvasTools, executeCanvasTool } from "./canvas-tools";
+import { dashboardTools, executeDashboardTool } from "./dashboard-tools";
 
 export interface ResearchToolCall { type: "tool.call"; call_id: string; name: string; arguments: Record<string, unknown> }
 interface FunctionTool { type: "function"; name: string; description: string; execution_mode: "interactive"; timeout_seconds: number; parameters: Record<string, unknown> }
@@ -11,7 +13,7 @@ const tool = (name: string, description: string, properties: Record<string, unkn
 const artifactId = { type: "string", description: "The exact workspace artifact id." };
 const expectedRevision = { type: "number", description: "The artifact revision returned by the latest read." };
 const cellsSchema = { type: "object", description: "A1 cell addresses mapped to text, numbers, or formulas beginning with =.", additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }] } };
-const plannerTasksSchema = { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, notes: { type: "string" }, completed: { type: "boolean" }, due_date: { type: "string" }, starts_at: { type: "string" }, ends_at: { type: "string" } }, required: ["title"] } };
+const plannerTasksSchema = { type: "array", items: { type: "object", properties: { id: { type: "string" }, title: { type: "string" }, notes: { type: "string" }, completed: { type: "boolean" }, due_date: { type: "string" }, starts_at: { type: "string" }, ends_at: { type: "string" }, blocked_reason: { type: "string" }, risk_level: { anyOf: [{ type: "string", enum: ["low", "medium", "high"] }, { type: "null" }] } }, required: ["title"] } };
 
 export const workspaceTools: FunctionTool[] = [
   tool("get_workspace", "List documents, sheets, planners, current task, research collections, and recent changes. Use before planning or editing.", {}),
@@ -24,6 +26,8 @@ export const workspaceTools: FunctionTool[] = [
   tool("create_planner", "Create a task planner and open Planner.", { title: { type: "string" }, tasks: plannerTasksSchema }, ["title"]),
   tool("read_planner", "Read a planner and its revision.", { planner_id: artifactId }, ["planner_id"]),
   tool("update_planner", "Replace a planner task list using its current revision.", { planner_id: artifactId, expected_revision: expectedRevision, tasks: plannerTasksSchema }, ["planner_id", "expected_revision", "tasks"]),
+  ...canvasTools,
+  ...dashboardTools,
   tool("apply_workspace_changes", "Atomically update related documents, sheets, and planners as one undoable change. Validate every expected revision first.", { label: { type: "string" }, changes: { type: "array", items: { type: "object", properties: { kind: { type: "string", enum: ["document", "sheet", "planner"] }, artifact_id: artifactId, expected_revision: expectedRevision, title: { type: "string" }, content: { type: "string" }, cells: cellsSchema, tasks: plannerTasksSchema }, required: ["kind", "artifact_id", "expected_revision"] } } }, ["label", "changes"]),
   tool("undo_change", "Undo one coordinated workspace change if none of its artifacts changed again.", { change_id: { type: "string" } }),
   tool("update_task", "Set or revise the objective, constraints, and short visible plan.", { objective: { type: "string" }, constraints: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } } }, ["objective"]),
@@ -36,9 +40,10 @@ export const workspaceTools: FunctionTool[] = [
 export const LIVE_GREETING = "Hi, I’m TalkOS. What would you like to get done today?";
 
 export const LIVE_SYSTEM_PROMPT = `You are TalkOS, a general productivity agent that controls a visible workspace through natural conversation.
-The workspace has Documents, Sheets, Planner, and Research. Inspect it before claiming to know its contents, create a short plan, then do useful work.
-Use Sheets for calculations, Planner for tasks and dates, Documents for deliverables, and Research only when current public facts help. Open the tool you are using.
+The workspace has Documents, Sheets, Planner, Canvas, Dashboard, and Research. Inspect it before claiming to know its contents, create a short plan, then do useful work.
+Use Sheets for calculations, Planner for tasks and dates, Documents for deliverables, Canvas for spatial thinking and diagrams, Dashboard for live project health, and Research only when current public facts help. Open the tool you are using.
 When one request changes related artifacts, use apply_workspace_changes so the user can undo it as one action. Never invent sources or claim a change succeeded before its result confirms it.
+For Canvas, read the current revision and use stable element ids; commit one completed instruction as one edit. For Dashboard, bind every widget to explicitly selected source ids and supported recipes. Ask which sheet/ranges to use when budget or category data is ambiguous.
 Keep spoken updates short. The user can interrupt or change a constraint at any time; acknowledge the correction, revise the task, and avoid committing stale work.
 The newest completed user turn overrides any conflicting earlier instruction. When redirected, abandon stale tool results and replan from the correction.`;
 
@@ -47,21 +52,31 @@ const failure = (call: ResearchToolCall, error: string, extra: Record<string, un
 const text = (args: Record<string, unknown>, key: string) => typeof args[key] === "string" ? String(args[key]).trim() : "";
 const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
 const cells = (value: unknown): Record<string, string | number> => value && typeof value === "object" ? Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === "string" || typeof item === "number")) : {};
-const plannerTasks = (value: unknown): PlannerTask[] => Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && typeof (item as Record<string, unknown>).title === "string").map((item) => ({
-  id: typeof item.id === "string" ? item.id : crypto.randomUUID(), title: String(item.title).trim(), notes: typeof item.notes === "string" ? item.notes : undefined,
-  completed: item.completed === true, dueDate: typeof item.due_date === "string" ? item.due_date : undefined,
-  startsAt: typeof item.starts_at === "string" ? item.starts_at : undefined, endsAt: typeof item.ends_at === "string" ? item.ends_at : undefined,
-})) : [];
+const owns = (value: Record<string, unknown>, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+const plannerTasks = (value: unknown, previous: PlannerTask[] = []): PlannerTask[] => Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && typeof (item as Record<string, unknown>).title === "string").map((item) => {
+  const id = typeof item.id === "string" ? item.id : crypto.randomUUID(); const before = previous.find((task) => task.id === id);
+  const optionalText = (key: string, fallback?: string) => owns(item, key) ? (typeof item[key] === "string" && String(item[key]).trim() ? String(item[key]) : undefined) : fallback;
+  const risk = owns(item, "risk_level") ? (["low", "medium", "high"].includes(String(item.risk_level)) ? item.risk_level as PlannerTask["riskLevel"] : undefined) : before?.riskLevel;
+  return { id, title: String(item.title).trim(), notes: optionalText("notes", before?.notes), completed: owns(item, "completed") ? item.completed === true : before?.completed ?? false,
+    dueDate: optionalText("due_date", before?.dueDate), startsAt: optionalText("starts_at", before?.startsAt), endsAt: optionalText("ends_at", before?.endsAt),
+    blockedReason: optionalText("blocked_reason", before?.blockedReason), riskLevel: risk };
+}) : [];
 const commit = (runtime: WorkspaceRuntime, signal: AbortSignal | undefined, workspace: WorkspaceSnapshot) => { if (signal?.aborted) return false; runtime.setWorkspace(workspace); return true; };
 
 export async function executeResearchTool(call: ResearchToolCall, runtime: WorkspaceRuntime, signal?: AbortSignal): Promise<ResearchToolExecution> {
   const workspace = runtime.getWorkspace(); const args = call.arguments;
   if (signal?.aborted) return failure(call, "interrupted");
+  const canvasExecution = await executeCanvasTool(call, runtime, signal);
+  if (canvasExecution) return canvasExecution;
+  const dashboardExecution = await executeDashboardTool(call, runtime, signal);
+  if (dashboardExecution) return dashboardExecution;
 
   if (call.name === "get_workspace") return success(call, "Workspace inspected", {
     active_document_id: workspace.activeDocumentId, documents: workspace.documents.map(({ id, title, kind, revision }) => ({ id, title, kind, revision })),
     active_sheet_id: workspace.activeSheetId, sheets: workspace.sheets.map(({ id, title, revision }) => ({ id, title, revision })),
     active_planner_id: workspace.activePlannerId, planners: workspace.planners.map(({ id, title, revision, tasks }) => ({ id, title, revision, task_count: tasks.length })),
+    active_canvas_id: workspace.activeCanvasId, canvases: workspace.canvases.map(({ id, title, revision, elements }) => ({ id, title, revision, element_count: elements.length })),
+    active_dashboard_id: workspace.activeDashboardId, dashboards: workspace.dashboards.map(({ id, title, revision, sources, widgets }) => ({ id, title, revision, source_count: sources.length, widget_count: widgets.length })),
     task: workspace.task, research: workspace.researchCollections.map(({ id, query, summary, sourceIds, status }) => ({ id, query, summary, source_ids: sourceIds, status })),
     recent_changes: workspace.changeHistory.slice(-5).map(({ id, label, undone }) => ({ id, label, undone })),
   });
@@ -101,7 +116,7 @@ export async function executeResearchTool(call: ResearchToolCall, runtime: Works
     const planner = workspace.planners.find((item) => item.id === text(args, "planner_id")); return planner ? success(call, `Read ${planner.title}`, { id: planner.id, title: planner.title, revision: planner.revision, timezone: planner.timezone, tasks: planner.tasks }) : failure(call, "planner_not_found");
   }
   if (call.name === "update_planner") {
-    const id = text(args, "planner_id"); const result = applyWorkspaceChanges(workspace, "Updated plan", [{ kind: "planner", artifactId: id, expectedRevision: args.expected_revision as number, tasks: plannerTasks(args.tasks) }]);
+    const id = text(args, "planner_id"); const result = applyWorkspaceChanges(workspace, "Updated plan", [{ kind: "planner", artifactId: id, expectedRevision: args.expected_revision as number, tasks: plannerTasks(args.tasks, workspace.planners.find((item) => item.id === id)?.tasks) }]);
     if (!result.ok) return failure(call, result.error, { artifact_id: result.artifactId, current_revision: result.currentRevision }); if (!commit(runtime, signal, result.workspace)) return failure(call, "interrupted"); runtime.setActiveView?.("planner");
     return success(call, "Plan updated", { planner_id: id, revision: result.change.afterRevisions[id], change_id: result.change.id });
   }
@@ -112,7 +127,7 @@ export async function executeResearchTool(call: ResearchToolCall, runtime: Works
       if ((kind !== "document" && kind !== "sheet" && kind !== "planner") || !id || typeof revision !== "number") return;
       if (kind === "document") mutations.push({ kind, artifactId: id, expectedRevision: revision, content: typeof change.content === "string" ? change.content : "", title: text(change, "title") || undefined });
       else if (kind === "sheet") mutations.push({ kind, artifactId: id, expectedRevision: revision, cells: cells(change.cells) });
-      else mutations.push({ kind, artifactId: id, expectedRevision: revision, tasks: plannerTasks(change.tasks) });
+      else mutations.push({ kind, artifactId: id, expectedRevision: revision, tasks: plannerTasks(change.tasks, workspace.planners.find((item) => item.id === id)?.tasks) });
     });
     if (!mutations.length || mutations.length !== raw.length) return failure(call, "invalid_workspace_changes"); const result = applyWorkspaceChanges(workspace, text(args, "label"), mutations);
     if (!result.ok) return failure(call, result.error, { artifact_id: result.artifactId, current_revision: result.currentRevision }); if (!commit(runtime, signal, result.workspace)) return failure(call, "interrupted");

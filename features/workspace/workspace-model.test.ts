@@ -5,6 +5,8 @@ import {
   createPlanner,
   createSheet,
   createWorkspace,
+  createDashboard,
+  duplicateArtifact,
   deleteResearchCollection,
   deleteResearchSource,
   editWorkspaceDocument,
@@ -169,5 +171,21 @@ describe("workspace model", () => {
     const restored = restoreTrashedArtifact(trashed, trashed.trash[0].id);
     expect(restored.sheets[0].title).toBe("Budget");
     expect(restored.trash).toHaveLength(0);
+  });
+
+  it("creates, updates, undoes, and duplicates dashboard definitions", () => {
+    const workspace = createDashboard(createWorkspace(), "Launch dashboard", [], []);
+    const dashboard = workspace.dashboards[0];
+    const updated = applyWorkspaceChanges(workspace, "Set launch date", [{ kind: "dashboard", artifactId: dashboard.id, expectedRevision: 1, definition: { ...dashboard, launchDate: "2026-09-30" } }]);
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.workspace.dashboards[0]).toMatchObject({ launchDate: "2026-09-30", revision: 2 });
+    const undone = undoLastWorkspaceChange(updated.workspace, updated.change.id);
+    expect(undone.ok).toBe(true);
+    if (!undone.ok) return;
+    expect(undone.workspace.dashboards[0].launchDate).toBeUndefined();
+    const duplicated = duplicateArtifact(undone.workspace, "dashboard", dashboard.id);
+    expect(duplicated.dashboards).toHaveLength(2);
+    expect(duplicated.dashboards[1]).toMatchObject({ title: "Launch dashboard copy", revision: 1 });
   });
 });

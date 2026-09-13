@@ -10,7 +10,7 @@ describe("workspace export", () => {
 
   it("rejects malformed or unsupported workspace files", () => {
     expect(() => parseWorkspaceExport("not json")).toThrow("invalid_workspace_file");
-    expect(() => parseWorkspaceExport(JSON.stringify({ version: 3 }))).toThrow("invalid_workspace_file");
+    expect(() => parseWorkspaceExport(JSON.stringify({ version: 4 }))).toThrow("invalid_workspace_file");
   });
 
   it("migrates a version-one workspace without losing documents or sources", () => {
@@ -25,9 +25,24 @@ describe("workspace export", () => {
     };
 
     const migrated = parseWorkspaceExport(JSON.stringify(legacy));
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(4);
     expect(migrated.documents[0].id).toBe(current.documents[0].id);
     expect(migrated.researchCollections[0].sourceIds).toEqual(["old"]);
     expect(migrated.conversation).toEqual([]);
+    expect(migrated.canvases).toEqual([]);
+    expect(migrated.canvasAssets).toEqual({});
+    expect(migrated.dashboards).toEqual([]);
+  });
+
+  it("migrates version three canvases without inventing dashboards", () => {
+    const current = createWorkspace();
+    const legacy = { ...current, version: 3 };
+    delete (legacy as Partial<typeof current>).dashboards;
+    delete (legacy as Partial<typeof current>).activeDashboardId;
+    const migrated = parseWorkspaceExport(JSON.stringify(legacy));
+    expect(migrated.version).toBe(4);
+    expect(migrated.canvases).toEqual(current.canvases);
+    expect(migrated.canvasAssets).toEqual(current.canvasAssets);
+    expect(migrated.dashboards).toEqual([]);
   });
 });

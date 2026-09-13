@@ -1,6 +1,9 @@
+import type { CanvasAsset, CanvasElement, WorkspaceCanvas } from "@/features/canvas/canvas.types";
+import type { DashboardSource, DashboardWidget, WorkspaceDashboard } from "@/features/dashboard/dashboard.types";
+
 export type DocumentKind = "notes" | "brief" | "import";
 export type EditAuthor = "user" | "agent";
-export type ArtifactType = "document" | "sheet" | "planner";
+export type ArtifactType = "document" | "sheet" | "planner" | "canvas" | "dashboard";
 
 export interface DocumentRevision { revision: number; content: string; editedBy: EditAuthor; editedAt: string }
 export interface WorkspaceDocument { id: string; title: string; kind: DocumentKind; content: string; revision: number; updatedAt: string; history: DocumentRevision[] }
@@ -10,7 +13,7 @@ export interface SheetCell { value: string | number; format?: SheetCellFormat }
 export interface SheetChart { title: string; labelRange: string; valueRange: string }
 export interface WorkspaceSheet { id: string; title: string; revision: number; updatedAt: string; cells: Record<string, SheetCell>; chart?: SheetChart }
 
-export interface PlannerTask { id: string; title: string; notes?: string; completed: boolean; dueDate?: string; startsAt?: string; endsAt?: string }
+export interface PlannerTask { id: string; title: string; notes?: string; completed: boolean; dueDate?: string; startsAt?: string; endsAt?: string; blockedReason?: string; riskLevel?: "low" | "medium" | "high" }
 export interface WorkspacePlanner { id: string; title: string; revision: number; updatedAt: string; timezone: string; tasks: PlannerTask[] }
 
 export interface RetrievedSource { id: string; title: string; url: string; snippet: string; content: string; retrievedAt: string }
@@ -22,19 +25,36 @@ export interface WorkspaceTask { objective: string; constraints: string[]; steps
 export type ArtifactSnapshot =
   | { artifactType: "document"; artifact: WorkspaceDocument }
   | { artifactType: "sheet"; artifact: WorkspaceSheet }
-  | { artifactType: "planner"; artifact: WorkspacePlanner };
+  | { artifactType: "planner"; artifact: WorkspacePlanner }
+  | { artifactType: "canvas"; artifact: WorkspaceCanvas }
+  | { artifactType: "dashboard"; artifact: WorkspaceDashboard };
 export type TrashedArtifact = ArtifactSnapshot & { id: string; deletedAt: string };
-export interface WorkspaceChange { id: string; label: string; author: EditAuthor; createdAt: string; before: ArtifactSnapshot[]; afterRevisions: Record<string, number>; undone: boolean }
+export interface WorkspaceChange {
+  id: string;
+  label: string;
+  author: EditAuthor;
+  createdAt: string;
+  before: ArtifactSnapshot[];
+  after?: ArtifactSnapshot[];
+  afterRevisions: Record<string, number>;
+  undoRevisions?: Record<string, number | null>;
+  undone: boolean;
+}
 export interface WorkspaceConversationTurn { id: string; speaker: "user" | "agent"; text: string; at: string }
 
 export interface WorkspaceSnapshot {
-  version: 2;
+  version: 4;
   documents: WorkspaceDocument[];
   activeDocumentId: string;
   sheets: WorkspaceSheet[];
   activeSheetId: string | null;
   planners: WorkspacePlanner[];
   activePlannerId: string | null;
+  canvases: WorkspaceCanvas[];
+  activeCanvasId: string | null;
+  canvasAssets: Record<string, CanvasAsset>;
+  dashboards: WorkspaceDashboard[];
+  activeDashboardId: string | null;
   sources: RetrievedSource[];
   researchCollections: ResearchCollection[];
   selectedSourceId: string | null;
@@ -53,7 +73,11 @@ export type DocumentEditResult =
 export type WorkspaceMutation =
   | { kind: "document"; artifactId: string; expectedRevision: number; content: string; title?: string }
   | { kind: "sheet"; artifactId: string; expectedRevision: number; cells: Record<string, string | number>; formats?: Record<string, SheetCellFormat>; chart?: SheetChart }
-  | { kind: "planner"; artifactId: string; expectedRevision: number; tasks: PlannerTask[] };
+  | { kind: "planner"; artifactId: string; expectedRevision: number; tasks: PlannerTask[] }
+  | { kind: "canvas"; artifactId: string; expectedRevision: number; elements: CanvasElement[] }
+  | { kind: "dashboard"; artifactId: string; expectedRevision: number; definition: WorkspaceDashboard };
+
+export type { DashboardSource, DashboardWidget, WorkspaceDashboard };
 export type WorkspaceChangeResult =
   | { ok: true; workspace: WorkspaceSnapshot; change: WorkspaceChange }
   | { ok: false; error: "artifact_not_found" | "revision_conflict"; artifactId: string; currentRevision?: number };

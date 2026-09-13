@@ -3,6 +3,8 @@ import type {
   RetrievedSource, TaskUpdate, TrashedArtifact, WorkspaceChange, WorkspaceChangeResult,
   WorkspaceDocument, WorkspaceMutation, WorkspacePlanner, WorkspaceSheet, WorkspaceSnapshot,
 } from "./workspace.types";
+import type { WorkspaceCanvas } from "@/features/canvas/canvas.types";
+import type { DashboardSource, DashboardWidget, WorkspaceDashboard } from "@/features/dashboard/dashboard.types";
 
 const now = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
@@ -17,11 +19,19 @@ export function createWorkspace(): WorkspaceSnapshot {
     revision: 1, updatedAt, history: [],
   };
   return {
-    version: 2, documents: [document], activeDocumentId: document.id,
+    version: 4, documents: [document], activeDocumentId: document.id,
     sheets: [], activeSheetId: null, planners: [], activePlannerId: null,
+    canvases: [], activeCanvasId: null, canvasAssets: {},
+    dashboards: [], activeDashboardId: null,
     sources: [], researchCollections: [], selectedSourceId: null, selectedResearchCollectionId: null,
     task: { objective: "", constraints: [], steps: [], revision: 0 }, trash: [], changeHistory: [], conversation: [],
   };
+}
+
+export function createDashboard(workspace: WorkspaceSnapshot, title: string, sources: DashboardSource[] = [], widgets: DashboardWidget[] = [], author: EditAuthor = "user", options: { launchDate?: string; timezone?: string } = {}): WorkspaceSnapshot {
+  const dashboard: WorkspaceDashboard = { id: makeId("dashboard"), title: title.trim() || "Untitled dashboard", revision: 1, updatedAt: now(), sources: clone(sources), timezone: options.timezone || timezone(), widgets: clone(widgets), ...(options.launchDate ? { launchDate: options.launchDate } : {}) };
+  const change: WorkspaceChange = { id: makeId("change"), label: `Created ${dashboard.title}`, author, createdAt: dashboard.updatedAt, before: [], after: [{ artifactType: "dashboard", artifact: clone(dashboard) }], afterRevisions: { [dashboard.id]: 1 }, undone: false };
+  return { ...workspace, dashboards: [...workspace.dashboards, dashboard], activeDashboardId: dashboard.id, changeHistory: [...workspace.changeHistory, change] };
 }
 
 export function createWorkspaceDocument(workspace: WorkspaceSnapshot, title: string, content = "", kind: DocumentKind = "notes"): WorkspaceSnapshot {
@@ -119,14 +129,33 @@ export function deleteResearchCollection(workspace: WorkspaceSnapshot, collectio
   };
 }
 
-function findArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: string): WorkspaceDocument | WorkspaceSheet | WorkspacePlanner | undefined {
+function findArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: string): WorkspaceDocument | WorkspaceSheet | WorkspacePlanner | WorkspaceCanvas | WorkspaceDashboard | undefined {
   if (type === "document") return workspace.documents.find((item) => item.id === id);
   if (type === "sheet") return workspace.sheets.find((item) => item.id === id);
-  return workspace.planners.find((item) => item.id === id);
+  if (type === "planner") return workspace.planners.find((item) => item.id === id);
+  if (type === "canvas") return workspace.canvases.find((item) => item.id === id);
+  return workspace.dashboards.find((item) => item.id === id);
 }
 
-function snapshot(type: ArtifactType, artifact: WorkspaceDocument | WorkspaceSheet | WorkspacePlanner): ArtifactSnapshot {
+function snapshot(type: ArtifactType, artifact: WorkspaceDocument | WorkspaceSheet | WorkspacePlanner | WorkspaceCanvas | WorkspaceDashboard): ArtifactSnapshot {
   return { artifactType: type, artifact: clone(artifact) } as ArtifactSnapshot;
+}
+
+function replaceArtifact(workspace: WorkspaceSnapshot, state: ArtifactSnapshot, revision: number): WorkspaceSnapshot {
+  const artifact = { ...clone(state.artifact), revision, updatedAt: now() };
+  if (state.artifactType === "document") return { ...workspace, documents: workspace.documents.some((item) => item.id === artifact.id) ? workspace.documents.map((item) => item.id === artifact.id ? artifact as WorkspaceDocument : item) : [...workspace.documents, artifact as WorkspaceDocument], activeDocumentId: artifact.id };
+  if (state.artifactType === "sheet") return { ...workspace, sheets: workspace.sheets.some((item) => item.id === artifact.id) ? workspace.sheets.map((item) => item.id === artifact.id ? artifact as WorkspaceSheet : item) : [...workspace.sheets, artifact as WorkspaceSheet], activeSheetId: artifact.id };
+  if (state.artifactType === "planner") return { ...workspace, planners: workspace.planners.some((item) => item.id === artifact.id) ? workspace.planners.map((item) => item.id === artifact.id ? artifact as WorkspacePlanner : item) : [...workspace.planners, artifact as WorkspacePlanner], activePlannerId: artifact.id };
+  if (state.artifactType === "canvas") return { ...workspace, canvases: workspace.canvases.some((item) => item.id === artifact.id) ? workspace.canvases.map((item) => item.id === artifact.id ? artifact as WorkspaceCanvas : item) : [...workspace.canvases, artifact as WorkspaceCanvas], activeCanvasId: artifact.id };
+  return { ...workspace, dashboards: workspace.dashboards.some((item) => item.id === artifact.id) ? workspace.dashboards.map((item) => item.id === artifact.id ? artifact as WorkspaceDashboard : item) : [...workspace.dashboards, artifact as WorkspaceDashboard], activeDashboardId: artifact.id };
+}
+
+function removeArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: string): WorkspaceSnapshot {
+  if (type === "document") { const documents = workspace.documents.filter((item) => item.id !== id); return { ...workspace, documents, activeDocumentId: documents[0]?.id ?? "" }; }
+  if (type === "sheet") { const sheets = workspace.sheets.filter((item) => item.id !== id); return { ...workspace, sheets, activeSheetId: sheets[0]?.id ?? null }; }
+  if (type === "planner") { const planners = workspace.planners.filter((item) => item.id !== id); return { ...workspace, planners, activePlannerId: planners[0]?.id ?? null }; }
+  if (type === "canvas") { const canvases = workspace.canvases.filter((item) => item.id !== id); return { ...workspace, canvases, activeCanvasId: canvases[0]?.id ?? null }; }
+  const dashboards = workspace.dashboards.filter((item) => item.id !== id); return { ...workspace, dashboards, activeDashboardId: dashboards[0]?.id ?? null };
 }
 
 export function applyWorkspaceChanges(workspace: WorkspaceSnapshot, label: string, mutations: WorkspaceMutation[], author: EditAuthor = "agent"): WorkspaceChangeResult {
@@ -148,40 +177,77 @@ export function applyWorkspaceChanges(workspace: WorkspaceSnapshot, label: strin
         cells: { ...sheet.cells, ...Object.fromEntries(Object.entries(mutation.cells).map(([address, value]) => [address.toUpperCase(), { value, format: mutation.formats?.[address] ?? sheet.cells[address]?.format }])) },
         chart: mutation.chart ?? sheet.chart,
       } : sheet) };
-    } else {
+    } else if (mutation.kind === "planner") {
       next = { ...next, planners: next.planners.map((planner) => planner.id === mutation.artifactId ? { ...planner, revision: planner.revision + 1, updatedAt: createdAt, tasks: clone(mutation.tasks) } : planner) };
+    } else if (mutation.kind === "canvas") {
+      next = { ...next, canvases: next.canvases.map((canvas) => canvas.id === mutation.artifactId ? { ...canvas, revision: canvas.revision + 1, updatedAt: createdAt, elements: clone(mutation.elements) } : canvas) };
+    } else {
+      next = { ...next, dashboards: next.dashboards.map((dashboard) => dashboard.id === mutation.artifactId ? { ...clone(mutation.definition), id: dashboard.id, revision: dashboard.revision + 1, updatedAt: createdAt } : dashboard) };
     }
   }
   const afterRevisions = Object.fromEntries(mutations.map((mutation) => [mutation.artifactId, findArtifact(next, mutation.kind, mutation.artifactId)!.revision]));
-  const change: WorkspaceChange = { id: makeId("change"), label: label.trim() || "Workspace updated", author, createdAt, before, afterRevisions, undone: false };
+  const after = mutations.map((mutation) => snapshot(mutation.kind, findArtifact(next, mutation.kind, mutation.artifactId)!));
+  const change: WorkspaceChange = { id: makeId("change"), label: label.trim() || "Workspace updated", author, createdAt, before, after, afterRevisions, undone: false };
   return { ok: true, workspace: { ...next, changeHistory: [...next.changeHistory, change] }, change };
 }
 
 export function undoLastWorkspaceChange(workspace: WorkspaceSnapshot, changeId?: string): WorkspaceChangeResult {
   const change = changeId ? workspace.changeHistory.find((item) => item.id === changeId) : workspace.changeHistory.findLast((item) => !item.undone);
   if (!change) return { ok: false, error: "artifact_not_found", artifactId: changeId ?? "latest" };
-  for (const before of change.before) {
-    const current = findArtifact(workspace, before.artifactType, before.artifact.id);
-    if (!current) return { ok: false, error: "artifact_not_found", artifactId: before.artifact.id };
-    if (current.revision !== change.afterRevisions[before.artifact.id]) return { ok: false, error: "revision_conflict", artifactId: before.artifact.id, currentRevision: current.revision };
+  const after = change.after ?? change.before;
+  for (const state of after) {
+    const current = findArtifact(workspace, state.artifactType, state.artifact.id);
+    if (!current) return { ok: false, error: "artifact_not_found", artifactId: state.artifact.id };
+    if (current.revision !== change.afterRevisions[state.artifact.id]) return { ok: false, error: "revision_conflict", artifactId: state.artifact.id, currentRevision: current.revision };
   }
   let next = workspace;
-  for (const before of change.before) {
-    const restored = { ...clone(before.artifact), revision: change.afterRevisions[before.artifact.id] + 1, updatedAt: now() };
-    if (before.artifactType === "document") next = { ...next, documents: next.documents.map((item) => item.id === restored.id ? restored as WorkspaceDocument : item) };
-    if (before.artifactType === "sheet") next = { ...next, sheets: next.sheets.map((item) => item.id === restored.id ? restored as WorkspaceSheet : item) };
-    if (before.artifactType === "planner") next = { ...next, planners: next.planners.map((item) => item.id === restored.id ? restored as WorkspacePlanner : item) };
+  const beforeIds = new Set(change.before.map((state) => state.artifact.id));
+  const undoRevisions: Record<string, number | null> = {};
+  for (const state of after) {
+    if (!beforeIds.has(state.artifact.id)) {
+      next = removeArtifact(next, state.artifactType, state.artifact.id);
+      undoRevisions[state.artifact.id] = null;
+    }
   }
-  const undone = { ...change, undone: true };
+  for (const before of change.before) {
+    const revision = change.afterRevisions[before.artifact.id] + 1;
+    next = replaceArtifact(next, before, revision);
+    undoRevisions[before.artifact.id] = revision;
+  }
+  const undone = { ...change, undoRevisions, undone: true };
   next = { ...next, changeHistory: next.changeHistory.map((item) => item.id === change.id ? undone : item) };
   return { ok: true, workspace: next, change: undone };
+}
+
+export function redoWorkspaceChange(workspace: WorkspaceSnapshot, changeId: string): WorkspaceChangeResult {
+  const change = workspace.changeHistory.find((item) => item.id === changeId);
+  if (!change?.undone || !change.after || !change.undoRevisions) return { ok: false, error: "artifact_not_found", artifactId: changeId };
+  for (const state of change.after) {
+    const current = findArtifact(workspace, state.artifactType, state.artifact.id);
+    const expected = change.undoRevisions[state.artifact.id];
+    if (expected === null && current) return { ok: false, error: "revision_conflict", artifactId: state.artifact.id, currentRevision: current.revision };
+    if (typeof expected === "number" && current?.revision !== expected) return { ok: false, error: current ? "revision_conflict" : "artifact_not_found", artifactId: state.artifact.id, currentRevision: current?.revision };
+  }
+  let next = workspace;
+  const afterRevisions: Record<string, number> = {};
+  for (const state of change.after) {
+    const expected = change.undoRevisions[state.artifact.id];
+    const revision = typeof expected === "number" ? expected + 1 : state.artifact.revision + 2;
+    next = replaceArtifact(next, state, revision);
+    afterRevisions[state.artifact.id] = revision;
+  }
+  const redone = { ...change, afterRevisions, undoRevisions: undefined, undone: false };
+  next = { ...next, changeHistory: next.changeHistory.map((item) => item.id === change.id ? redone : item) };
+  return { ok: true, workspace: next, change: redone };
 }
 
 export function renameArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: string, title: string): WorkspaceSnapshot {
   const name = title.trim(); if (!name) return workspace;
   if (type === "document") return { ...workspace, documents: workspace.documents.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
   if (type === "sheet") return { ...workspace, sheets: workspace.sheets.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
-  return { ...workspace, planners: workspace.planners.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
+  if (type === "planner") return { ...workspace, planners: workspace.planners.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
+  if (type === "canvas") return { ...workspace, canvases: workspace.canvases.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
+  return { ...workspace, dashboards: workspace.dashboards.map((item) => item.id === id ? { ...item, title: name, revision: item.revision + 1, updatedAt: now() } : item) };
 }
 
 export function duplicateArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: string): WorkspaceSnapshot {
@@ -189,7 +255,11 @@ export function duplicateArtifact(workspace: WorkspaceSnapshot, type: ArtifactTy
   const copy = { ...clone(artifact), id: makeId(type), title: `${artifact.title} copy`, revision: 1, updatedAt: now() };
   if (type === "document") return { ...workspace, documents: [...workspace.documents, copy as WorkspaceDocument], activeDocumentId: copy.id };
   if (type === "sheet") return { ...workspace, sheets: [...workspace.sheets, copy as WorkspaceSheet], activeSheetId: copy.id };
-  return { ...workspace, planners: [...workspace.planners, copy as WorkspacePlanner], activePlannerId: copy.id };
+  if (type === "planner") return { ...workspace, planners: [...workspace.planners, copy as WorkspacePlanner], activePlannerId: copy.id };
+  if (type === "canvas") return { ...workspace, canvases: [...workspace.canvases, copy as WorkspaceCanvas], activeCanvasId: copy.id };
+  const dashboard = copy as WorkspaceDashboard;
+  const widgets = dashboard.widgets.map((widget) => ({ ...widget, id: makeId("widget") })) as DashboardWidget[];
+  return { ...workspace, dashboards: [...workspace.dashboards, { ...dashboard, widgets }], activeDashboardId: copy.id };
 }
 
 export function moveArtifactToTrash(workspace: WorkspaceSnapshot, type: ArtifactType, id: string): WorkspaceSnapshot {
@@ -197,7 +267,9 @@ export function moveArtifactToTrash(workspace: WorkspaceSnapshot, type: Artifact
   const trashed: TrashedArtifact = { ...snapshot(type, artifact), id: makeId("trash"), deletedAt: now() } as TrashedArtifact;
   if (type === "document") { const documents = workspace.documents.filter((item) => item.id !== id); return { ...workspace, documents, activeDocumentId: documents[0]?.id ?? "", trash: [...workspace.trash, trashed] }; }
   if (type === "sheet") { const sheets = workspace.sheets.filter((item) => item.id !== id); return { ...workspace, sheets, activeSheetId: sheets[0]?.id ?? null, trash: [...workspace.trash, trashed] }; }
-  const planners = workspace.planners.filter((item) => item.id !== id); return { ...workspace, planners, activePlannerId: planners[0]?.id ?? null, trash: [...workspace.trash, trashed] };
+  if (type === "planner") { const planners = workspace.planners.filter((item) => item.id !== id); return { ...workspace, planners, activePlannerId: planners[0]?.id ?? null, trash: [...workspace.trash, trashed] }; }
+  if (type === "canvas") { const canvases = workspace.canvases.filter((item) => item.id !== id); return { ...workspace, canvases, activeCanvasId: canvases[0]?.id ?? null, trash: [...workspace.trash, trashed] }; }
+  const dashboards = workspace.dashboards.filter((item) => item.id !== id); return { ...workspace, dashboards, activeDashboardId: dashboards[0]?.id ?? null, trash: [...workspace.trash, trashed] };
 }
 
 export function restoreTrashedArtifact(workspace: WorkspaceSnapshot, trashId: string): WorkspaceSnapshot {
@@ -205,5 +277,7 @@ export function restoreTrashedArtifact(workspace: WorkspaceSnapshot, trashId: st
   const trash = workspace.trash.filter((entry) => entry.id !== trashId);
   if (item.artifactType === "document") return { ...workspace, documents: [...workspace.documents, item.artifact], activeDocumentId: item.artifact.id, trash };
   if (item.artifactType === "sheet") return { ...workspace, sheets: [...workspace.sheets, item.artifact], activeSheetId: item.artifact.id, trash };
-  return { ...workspace, planners: [...workspace.planners, item.artifact], activePlannerId: item.artifact.id, trash };
+  if (item.artifactType === "planner") return { ...workspace, planners: [...workspace.planners, item.artifact], activePlannerId: item.artifact.id, trash };
+  if (item.artifactType === "canvas") return { ...workspace, canvases: [...workspace.canvases, item.artifact], activeCanvasId: item.artifact.id, trash };
+  return { ...workspace, dashboards: [...workspace.dashboards, item.artifact], activeDashboardId: item.artifact.id, trash };
 }

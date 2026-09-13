@@ -25,6 +25,8 @@ const taskCsv = (tasks: PlannerTask[]) => Papa.unparse(tasks.map((task) => ({
   Due: task.dueDate ?? "",
   Start: task.startsAt ?? "",
   End: task.endsAt ?? "",
+  Blocked: task.blockedReason ?? "",
+  Risk: task.riskLevel ?? "Not assessed",
 })), { escapeFormulae: true });
 
 export function PlannerWorkspace({ workspace, onChange }: { workspace: WorkspaceSnapshot; onChange: (workspace: WorkspaceSnapshot) => void }) {
@@ -66,7 +68,8 @@ export function PlannerWorkspace({ workspace, onChange }: { workspace: Workspace
           <input aria-label={`Complete ${task.title}`} type="checkbox" checked={task.completed} onChange={() => updateTask(task.id, { completed: !task.completed }, `Updated ${task.title}`)} />
           <div><strong>{task.title}</strong>{task.notes ? <p>{task.notes}</p> : null}{conflicts.has(task.id) ? <small>Overlaps another task</small> : null}</div>
           <div className="task-dates">
-            <label>Due<input aria-label={`Due date for ${task.title}`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, { dueDate: event.target.value }, `Rescheduled ${task.title}`)} /></label>
+            <label>Due<input aria-label={`Due date for ${task.title}`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, { dueDate: event.target.value || undefined }, `Rescheduled ${task.title}`)} /></label>
+            <details className="task-health"><summary>Risk & blockers</summary><label>Blocked reason<input aria-label={`Blocked reason for ${task.title}`} value={task.blockedReason ?? ""} placeholder="Not blocked" onChange={(event) => updateTask(task.id, { blockedReason: event.target.value.trim() || undefined }, `Updated blocker for ${task.title}`)} /></label><label>Risk<select aria-label={`Risk level for ${task.title}`} value={task.riskLevel ?? ""} onChange={(event) => updateTask(task.id, { riskLevel: (event.target.value || undefined) as PlannerTask["riskLevel"] }, `Updated risk for ${task.title}`)}><option value="">Not assessed</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></details>
             <details><summary>Schedule</summary><label>Starts<input aria-label={`Start time for ${task.title}`} type="datetime-local" value={toPlannerDateTime(task.startsAt, active.timezone)} onChange={(event) => updateTask(task.id, { startsAt: event.target.value ? fromPlannerDateTime(event.target.value, active.timezone) : undefined }, `Rescheduled ${task.title}`)} /></label><label>Ends<input aria-label={`End time for ${task.title}`} type="datetime-local" value={toPlannerDateTime(task.endsAt, active.timezone)} onChange={(event) => updateTask(task.id, { endsAt: event.target.value ? fromPlannerDateTime(event.target.value, active.timezone) : undefined }, `Rescheduled ${task.title}`)} /></label></details>
           </div>
         </article>) : <p className="empty-copy">No tasks yet. Add one here or ask TalkOS.</p>}</section>

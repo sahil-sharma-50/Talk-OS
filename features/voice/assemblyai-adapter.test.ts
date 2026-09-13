@@ -37,9 +37,10 @@ describe("AssemblyAI session setup", () => {
     const emit = vi.fn();
     const telemetry = vi.fn();
     const activeView = vi.fn();
+    const setWorkspace = vi.fn();
     const adapter = createAssemblyAIAdapter(undefined, {
       getWorkspace: () => createWorkspace(),
-      setWorkspace: vi.fn(),
+      setWorkspace,
       getTavilyApiKey: () => "",
       setActiveView: activeView,
     });
@@ -77,6 +78,11 @@ describe("AssemblyAI session setup", () => {
         endpointLatencyMs: expect.any(Number),
         responseLatencyMs: expect.any(Number),
       }));
+
+      const duplicate = new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "same-call", name: "create_canvas", arguments: { title: "Only once" } }) });
+      socket.dispatchEvent(duplicate);
+      socket.dispatchEvent(duplicate);
+      await vi.waitFor(() => expect(setWorkspace).toHaveBeenCalledOnce());
 
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-follow", name: "search_web", arguments: { query: "voice agents" } }) }));
       expect(activeView).toHaveBeenCalledWith("research");

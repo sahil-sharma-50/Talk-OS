@@ -15,7 +15,7 @@ export function exportPlannerIcs(tasks: PlannerTask[], timezone: string): string
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//TalkOS//Planner//EN", `X-WR-TIMEZONE:${escapeIcs(timezone)}`];
   tasks.filter((task) => task.startsAt && task.endsAt).forEach((task) => lines.push(
     "BEGIN:VEVENT", `UID:${escapeIcs(task.id)}@talkos.local`, `DTSTART:${icsDate(task.startsAt!)}`, `DTEND:${icsDate(task.endsAt!)}`,
-    `SUMMARY:${escapeIcs(task.title)}`, ...(task.notes ? [`DESCRIPTION:${escapeIcs(task.notes)}`] : []), "END:VEVENT",
+    `SUMMARY:${escapeIcs(task.title)}`, ...(() => { const details = [task.notes, task.blockedReason ? `Blocked: ${task.blockedReason}` : "", task.riskLevel ? `Risk: ${task.riskLevel}` : ""].filter(Boolean).join("\n"); return details ? [`DESCRIPTION:${escapeIcs(details)}`] : []; })(), "END:VEVENT",
   ));
   lines.push("END:VCALENDAR");
   return `${lines.join("\r\n")}\r\n`;

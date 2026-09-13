@@ -9,7 +9,7 @@ export type VoiceState =
   | "error";
 
 export type Speaker = "user" | "agent";
-export type WorkspaceView = "documents" | "sheets" | "planner" | "research" | "settings";
+export type WorkspaceView = "documents" | "sheets" | "planner" | "research" | "canvas" | "dashboard" | "settings";
 export type ActivityStatus = "pending" | "active" | "completed" | "interrupted" | "failed";
 
 export interface ConversationTurn {

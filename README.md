@@ -9,6 +9,8 @@ The interaction is built for correction while work is happening. If a user inter
 
 ![TalkOS product overview](assets/talk-os-image.png)
 
+<hr>
+
 ## How it works
 
 ```mermaid
@@ -25,6 +27,8 @@ flowchart LR
 
 The browser owns the workspace state and editors. `app/api/voice-token` exchanges an AssemblyAI key for a short-lived session token; the browser then opens the realtime WebSocket directly. `app/api/research` proxies constrained Tavily search and extraction requests. Neither route stores credentials or workspace data. See [Architecture](docs/ARCHITECTURE.md) for the module map and data flow.
 
+<hr>
+
 ## Highlights
 
 - Realtime voice sessions powered by AssemblyAI, with live captions, interruption, mute, and recovery controls.
@@ -35,6 +39,8 @@ The browser owns the workspace state and editors. `app/api/voice-token` exchange
 - Dashboards composed from selected workspace sources, with live metrics, charts, deadlines, summaries, and movable layouts.
 - Tavily-backed research organized by query with inspectable sources and extracted content.
 - Local-first workspace persistence, revision checks, visible activity receipts, and undo/redo for agent changes.
+
+<hr>
 
 ## Technology
 
@@ -47,6 +53,8 @@ The browser owns the workspace state and editors. `app/api/voice-token` exchange
 | Quality | Vitest, Testing Library, TypeScript, and ESLint |
 | Delivery | Vercel and GitHub Actions CI |
 
+<hr>
+
 ## Requirements
 
 | Requirement | Details |
@@ -56,6 +64,8 @@ The browser owns the workspace state and editors. `app/api/voice-token` exchange
 | Browser | A modern browser with microphone support |
 | AssemblyAI | An API key and published Agent ID for voice features |
 | Tavily | An optional API key for live research |
+
+<hr>
 
 ## Run locally
 
@@ -87,6 +97,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). TalkOS can start with the empty example values. Open **Settings** in the app and provide your AssemblyAI API key, AssemblyAI Agent ID, and optional Tavily API key. You may instead place those credentials in `.env.local` for local development. Never commit `.env.local` or any populated environment file.
 
+<hr>
+
 ## Available commands
 
 | Command | Purpose |
@@ -100,6 +112,8 @@ Open [http://localhost:3000](http://localhost:3000). TalkOS can start with the e
 | `npm run test:run` | Run the complete test suite once |
 | `npm run check` | Run lint, types, tests, and the production build |
 
+<hr>
+
 ## Privacy and security
 
 - Workspace artifacts, conversation history, research, trash, and activity receipts persist locally in IndexedDB.
@@ -110,6 +124,8 @@ Open [http://localhost:3000](http://localhost:3000). TalkOS can start with the e
 - Production ignores server-side API keys unless `TALKOS_ALLOW_SERVER_CREDENTIALS=true` is explicitly enabled.
 
 Read [Security](SECURITY.md) before enabling server-funded credentials.
+
+<hr>
 
 ## Contributing and license
 

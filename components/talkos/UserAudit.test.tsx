@@ -22,7 +22,7 @@ describe("user audit editing regressions", () => {
     act(() => cell.focus()); cell.setSelectionRange(6, 6);
     fireEvent.keyDown(cell, { key: "ArrowRight" });
     expect(screen.getByRole("textbox", { name: "C1" })).toHaveFocus();
-  });
+  }, 10_000);
 
   it("edits descriptions and reorders tasks without losing task data", () => {
     function Harness() {

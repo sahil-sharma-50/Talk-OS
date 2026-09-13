@@ -8,6 +8,8 @@ The interaction is built for correction while work is happening. If a user inter
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/clone?repository-url=https%3A%2F%2Fgithub.com%2Fsahil-sharma-50%2FTalk-OS)
 
+![TalkOS product overview](assets/talk-os-image.png)
+
 ## Highlights
 
 - Realtime voice sessions powered by AssemblyAI, with live captions, interruption, mute, and recovery controls.

@@ -1,6 +1,6 @@
 # TalkOS
 
-[![CI](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml/badge.svg)](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml)
+[![CI](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/sahil-sharma-50/Talk-OS/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
 [![Live on Vercel](https://img.shields.io/badge/Vercel-Live-000000?logo=vercel&logoColor=white)](https://talk-os-app.vercel.app/)
 
 TalkOS is a voice-directed productivity workspace. Speak an outcome and the agent can coordinate documents, working spreadsheets, plans, source-backed research, visual canvases, and live dashboards in one browser workspace.
@@ -8,6 +8,8 @@ TalkOS is a voice-directed productivity workspace. Speak an outcome and the agen
 The interaction is built for correction while work is happening. If a user interrupts with a new constraint, TalkOS cancels active work, rejects stale results, revises the task, and records the coordinated change as an undoable activity.
 
 ![TalkOS product overview](assets/talk-os-image.png)
+
+**Live app:** [Open TalkOS on Vercel](https://talk-os-app.vercel.app/)
 
 <hr>
 

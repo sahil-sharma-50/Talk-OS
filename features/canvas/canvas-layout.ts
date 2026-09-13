@@ -23,4 +23,3 @@ export function arrangeCanvas(canvas: WorkspaceCanvas, nodeIds: string[], direct
   });
   return { ok: true, canvas: { ...canvas, revision: canvas.revision + 1, updatedAt: new Date().toISOString(), elements }, removedConnectorIds: [] };
 }
-

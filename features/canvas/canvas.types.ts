@@ -64,4 +64,3 @@ export type CanvasOperation =
 export type CanvasOperationResult =
   | { ok: true; canvas: WorkspaceCanvas; removedConnectorIds: string[] }
   | { ok: false; error: "revision_conflict" | "invalid_canvas_scene" | "canvas_limit_exceeded"; detail: string; currentRevision?: number };
-

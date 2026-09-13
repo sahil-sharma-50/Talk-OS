@@ -23,10 +23,15 @@ test-results/
 .env
 .env.*
 !.env.example
+.envrc
+.direnv/
 .npmrc
 *.pem
 *.key
 *.p12
+*.pfx
+*.jks
+*.keystore
 
 # Logs
 *.log

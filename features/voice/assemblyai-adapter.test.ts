@@ -8,6 +8,28 @@ import { initialSessionState } from "@/features/session/session.fixtures";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AssemblyAI session setup", () => {
+  it("sends only AssemblyAI credentials to the voice-token route", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; resume = vi.fn(); close = vi.fn(); });
+    const fetchRequest = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void input;
+      void init;
+      return Response.json({ token: "test-token" });
+    });
+    vi.stubGlobal("fetch", fetchRequest);
+
+    const adapter = createAssemblyAIAdapter({ apiKey: "assembly-secret", agentId: "agent-123", tavilyApiKey: "tavily-secret" });
+    await adapter.connect(vi.fn());
+    try {
+      expect(fetchRequest.mock.calls[0][0]).toBe("/api/voice-token");
+      expect(JSON.parse(String(fetchRequest.mock.calls[0][1]?.body))).toEqual({ apiKey: "assembly-secret", agentId: "agent-123" });
+    } finally {
+      await adapter.disconnect();
+    }
+  });
+
   it("retains a segmented Planner request across tool replies and recovers from a wrong creation tool", async () => {
     class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
     const socket = new TestSocket();

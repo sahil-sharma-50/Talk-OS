@@ -423,7 +423,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       const response = await fetch("/api/voice-token", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: credentials ? JSON.stringify(credentials) : undefined,
+        body: credentials ? JSON.stringify({ apiKey: credentials.apiKey, agentId: credentials.agentId }) : undefined,
         signal: tokenController.signal,
       });
       if (thisConnection !== connectionGeneration) return;

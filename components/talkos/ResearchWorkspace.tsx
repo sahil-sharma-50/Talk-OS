@@ -2,6 +2,7 @@ import { ExternalLink, Globe2, Search } from "lucide-react";
 import { exportResearchCollectionMarkdown, exportResearchSourceMarkdown } from "@/features/workspace/research-export";
 import { deleteResearchCollection, deleteResearchSource } from "@/features/workspace/workspace-model";
 import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
+import { ArtifactNavigator, ArtifactNavigatorItem } from "./ArtifactNavigator";
 import { ResearchActionMenu } from "./ResearchActionMenu";
 import { WorkspaceResizeHandle } from "./WorkspaceResizeHandle";
 
@@ -24,19 +25,15 @@ export function ResearchWorkspace({ workspace, onChange }: { workspace: Workspac
   const selected = collectionSources.find((source) => source?.id === workspace.selectedSourceId) ?? collectionSources[0];
   const hostname = (url: string) => { try { return new URL(url).hostname; } catch { return url; } };
   return <div className="research-workspace research-grouped">
-    <aside className="research-queries">
-      <header><strong>Searches</strong><span>{workspace.researchCollections.length}</span></header>
-      {workspace.researchCollections.map((item) => <div className="research-query-row" data-active={item.id === collection?.id} key={item.id}>
-        <button type="button" aria-current={item.id === collection?.id ? "page" : undefined} onClick={() => onChange({ ...workspace, selectedResearchCollectionId: item.id, selectedSourceId: item.sourceIds[0] ?? null })}><Search size={14} /><span><strong>{item.query}</strong><small>{item.sourceIds.length} sources · {item.status}</small></span></button>
-        <ResearchActionMenu
+    <ArtifactNavigator label="Research" count={workspace.researchCollections.length} countLabel={`${workspace.researchCollections.length} saved searches`}>
+      {workspace.researchCollections.map((item) => <ArtifactNavigatorItem active={item.id === collection?.id} icon={Search} title={item.query} meta={`${item.sourceIds.length} ${item.sourceIds.length === 1 ? "source" : "sources"} · ${item.status[0].toUpperCase() + item.status.slice(1)}`} key={item.id} onSelect={() => onChange({ ...workspace, selectedResearchCollectionId: item.id, selectedSourceId: item.sourceIds[0] ?? null })} menu={<ResearchActionMenu
           label={item.query}
           kind="saved search"
           onDownload={() => download(`${filename(item.query)}.md`, exportResearchCollectionMarkdown(item, workspace.sources))}
           onDelete={() => onChange(deleteResearchCollection(workspace, item.id))}
-        />
-      </div>)}
+        />} />)}
       {!collection ? <div className="research-empty"><Globe2 size={28} /><strong>No web research yet</strong><p>Ask TalkOS to investigate something that helps finish your task.</p></div> : null}
-    </aside>
+    </ArtifactNavigator>
     <section className="research-results">
       {collection ? <><header><div><h2>{collection.query}</h2><p>{collection.summary || "Sources collected for this search. Open one to inspect the evidence."}</p></div><span>{collectionSources.length} results</span></header><div className="research-result-list">{collectionSources.map((source) => source ? <div className="research-result-row" data-active={source.id === selected?.id} key={source.id}>
         <button type="button" aria-current={source.id === selected?.id ? "page" : undefined} onClick={() => onChange({ ...workspace, selectedSourceId: source.id })}><strong>{source.title}</strong><small>{hostname(source.url)}</small><p>{source.snippet}</p></button>

@@ -223,7 +223,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       });
       if (response.status === 503) throw new VoiceNotConfiguredError();
       if (!response.ok) throw new Error("The AssemblyAI session could not be started.");
-      const sessionCredentials = (await response.json()) as { token: string; agentId: string };
+      const sessionCredentials = (await response.json()) as { token: string };
 
       audioContext = new AudioContext();
       await audioContext.resume();
@@ -235,7 +235,6 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
         socket?.send(JSON.stringify({
           type: "session.update",
           session: {
-            agent_id: sessionCredentials.agentId,
             greeting: LIVE_GREETING,
             system_prompt: LIVE_SYSTEM_PROMPT,
             tools: workspaceTools,

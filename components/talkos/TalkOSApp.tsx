@@ -28,6 +28,7 @@ export function TalkOSApp({
   const [workspace, setWorkspaceState] = useState<WorkspaceSnapshot>(() => createWorkspace());
   const [activityOpen, setActivityOpen] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [microphoneIssue, setMicrophoneIssue] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState<VoiceTelemetrySnapshot>(emptyVoiceTelemetry);
   const workspaceRef = useRef(workspace);
   const credentialsRef = useRef(credentials);
@@ -77,19 +78,39 @@ export function TalkOSApp({
     dispatch({ type: "WORKSPACE_CHANGED", workspace: nextView, at: new Date().toISOString() });
   }, []);
 
+  const startMicrophone = async (adapter: VoiceAdapter) => {
+    try {
+      await adapter.startListening();
+      microphoneStartedRef.current = true;
+      setMicrophoneIssue(null);
+      return true;
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "";
+      const message = name === "NotAllowedError" || name === "SecurityError"
+        ? "Microphone access is blocked. Allow it in browser settings, then try again. You can type below in the meantime."
+        : name === "NotFoundError" || name === "DevicesNotFoundError"
+          ? "No microphone was found. Connect one, then try again. You can type below in the meantime."
+          : name === "NotReadableError" || name === "TrackStartError"
+            ? "The microphone is busy in another app. Close it there, then try again. You can type below in the meantime."
+            : null;
+      if (!message) throw error;
+      microphoneStartedRef.current = false;
+      setMicrophoneIssue(message);
+      return false;
+    }
+  };
+
   const connectSession = async (withMicrophone: boolean): Promise<VoiceAdapter | null> => {
     if (connectingRef.current) {
       const adapter = await connectingRef.current;
       if (adapter && withMicrophone && !microphoneStartedRef.current) {
-        await adapter.startListening();
-        microphoneStartedRef.current = true;
+        await startMicrophone(adapter);
       }
       return adapter;
     }
     if (voiceAdapter.current) {
       if (withMicrophone && !microphoneStartedRef.current) {
-        await voiceAdapter.current.startListening();
-        microphoneStartedRef.current = true;
+        await startMicrophone(voiceAdapter.current);
       }
       return voiceAdapter.current;
     }
@@ -120,8 +141,7 @@ export function TalkOSApp({
       try {
         await adapter.connect(emit);
         if (withMicrophone) {
-          await adapter.startListening();
-          microphoneStartedRef.current = true;
+          await startMicrophone(adapter);
         }
         return adapter;
       } catch (error) {
@@ -146,6 +166,7 @@ export function TalkOSApp({
     void voiceAdapter.current?.disconnect();
     voiceAdapter.current = null;
     microphoneStartedRef.current = false;
+    setMicrophoneIssue(null);
     setAudioLevel(0);
     setTelemetry(emptyVoiceTelemetry);
     dispatch({ type: "SESSION_RESET", at: new Date().toISOString() });
@@ -154,6 +175,7 @@ export function TalkOSApp({
     void voiceAdapter.current?.disconnect();
     voiceAdapter.current = null;
     microphoneStartedRef.current = false;
+    setMicrophoneIssue(null);
     setAudioLevel(0);
     setTelemetry(emptyVoiceTelemetry);
     dispatch({ type: "SESSION_STOPPED", at: new Date().toISOString() });
@@ -194,6 +216,9 @@ export function TalkOSApp({
         <VoicePanel
           state={state}
           onStartLive={() => void startLive()}
+          microphoneIssue={microphoneIssue}
+          onRetryMicrophone={() => void connectSession(true)}
+          onSubmitText={(text) => voiceAdapter.current?.submitText?.(text)}
           audioLevel={audioLevel}
         />
         <Workspace state={state} workspace={workspace} onWorkspaceChange={changeWorkspace} onWorkspaceDataChange={updateWorkspace} credentials={credentials} onCredentialsChange={setCredentials} telemetry={telemetry} activityOpen={activityOpen} onActivityToggle={() => setActivityOpen((open) => !open)} onUndo={undoChange} />

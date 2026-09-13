@@ -53,6 +53,43 @@ describe("TalkOS AssemblyAI client tools", () => {
     expect(setActiveView).toHaveBeenCalledWith("canvas");
   });
 
+  it("declares the discriminator and fields for every canvas operation", () => {
+    const createCanvas = workspaceTools.find((tool) => tool.name === "create_canvas");
+    const parameters = createCanvas?.parameters as {
+      properties?: { operations?: { items?: { oneOf?: Array<{ required?: string[] }> } } };
+    };
+    const variants = parameters.properties?.operations?.items?.oneOf;
+
+    expect(variants).toBeDefined();
+    expect(variants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ required: expect.arrayContaining(["op", "id", "role", "text", "x", "y"]) }),
+      expect.objectContaining({ required: expect.arrayContaining(["op", "id", "sourceId", "targetId"]) }),
+    ]));
+  });
+
+  it("normalizes unambiguous canvas operations when the provider omits op", async () => {
+    const { runtime, workspace } = createRuntime();
+    const created = await executeResearchTool({ type: "tool.call", call_id: "canvas-provider-shape", name: "create_canvas", arguments: {
+      title: "User Signup Flow",
+      operations: [
+        { id: "step1", role: "process", text: "User Signs Up", x: 0, y: 0 },
+        { id: "step2", role: "process", text: "Verify Email", x: 300, y: 0 },
+        { id: "step3", role: "process", text: "Reach Dashboard", x: 600, y: 0 },
+        { id: "arrow1", sourceId: "step1", targetId: "step2" },
+        { id: "arrow2", sourceId: "step2", targetId: "step3" },
+      ],
+    } }, runtime);
+
+    expect(created.isError).not.toBe(true);
+    expect(workspace().canvases[0].elements.map(({ id, type }) => ({ id, type }))).toEqual([
+      { id: "step1", type: "process" },
+      { id: "step2", type: "process" },
+      { id: "step3", type: "process" },
+      { id: "arrow1", type: "arrow" },
+      { id: "arrow2", type: "arrow" },
+    ]);
+  });
+
   it("does not commit a canvas edit after interruption", async () => {
     const { runtime, workspace } = createRuntime();
     await executeResearchTool({ type: "tool.call", call_id: "canvas-create", name: "create_canvas", arguments: { title: "Draft" } }, runtime);

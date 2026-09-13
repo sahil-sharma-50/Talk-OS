@@ -8,8 +8,11 @@ const MIN_HEIGHT = 360;
 
 function resizeSurface(surface: HTMLElement, width: number, height: number) {
   const parent = surface.parentElement;
-  const maxWidth = Math.max(MIN_WIDTH, (parent?.clientWidth || window.innerWidth) - 16);
-  const maxHeight = Math.max(MIN_HEIGHT, Math.max(parent?.clientHeight || 0, window.innerHeight) - 24);
+  const parentStyle = parent ? getComputedStyle(parent) : null;
+  const horizontalInset = parentStyle ? parseFloat(parentStyle.paddingLeft) + parseFloat(parentStyle.paddingRight) : 16;
+  const verticalInset = parentStyle ? parseFloat(parentStyle.paddingTop) + parseFloat(parentStyle.paddingBottom) : 24;
+  const maxWidth = Math.max(MIN_WIDTH, (parent?.clientWidth || window.innerWidth) - horizontalInset);
+  const maxHeight = Math.max(MIN_HEIGHT, (parent?.clientHeight || window.innerHeight) - verticalInset);
   surface.style.width = `${Math.round(Math.min(maxWidth, Math.max(MIN_WIDTH, width)))}px`;
   surface.style.height = `${Math.round(Math.min(maxHeight, Math.max(MIN_HEIGHT, height)))}px`;
 }

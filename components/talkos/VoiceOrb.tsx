@@ -22,20 +22,22 @@ const stateHint: Record<VoiceState, string> = {
   error: "Tap to try again",
 };
 
-export function VoiceOrb({ state, onStart, level = 0 }: { state: VoiceState; onStart: () => void; level?: number }) {
+export function VoiceOrb({ state, onStart, level = 0, microphoneBlocked = false }: { state: VoiceState; onStart: () => void; level?: number; microphoneBlocked?: boolean }) {
   const isActive = !["idle", "error"].includes(state);
+  const title = microphoneBlocked && state === "listening" ? "Agent ready" : stateCopy[state];
+  const hint = microphoneBlocked && state === "listening" ? "Type below to continue" : stateHint[state];
 
   return (
     <section className="voice-state" data-state={state} aria-live="polite" style={{ "--voice-level": level.toFixed(3) } as React.CSSProperties}>
-      <button className="voice-agent" type="button" onClick={onStart} disabled={isActive} aria-label={isActive ? `Voice agent ${stateCopy[state]}` : "Start voice agent"}>
+      <button className="voice-agent" type="button" onClick={onStart} disabled={isActive} aria-label={isActive ? `Voice agent ${title}` : "Start voice agent"}>
         <span className="voice-orb" aria-hidden="true">
           <span className="voice-orb__aura" />
           <span className="voice-orb__shape"><i /><i /></span>
           <span className="voice-orb__signal"><i /><i /><i /></span>
         </span>
         <span className="voice-agent__copy">
-          <strong>{stateCopy[state]}</strong>
-          <small>{stateHint[state]}</small>
+          <strong>{title}</strong>
+          <small>{hint}</small>
         </span>
       </button>
     </section>

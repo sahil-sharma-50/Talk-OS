@@ -37,7 +37,7 @@ export const workspaceTools: FunctionTool[] = [
   tool("export_document", "Prepare a document as a Markdown download payload.", { document_id: artifactId }, ["document_id"]),
 ];
 
-export const LIVE_GREETING = "Hi, I’m TalkOS. What would you like to get done today?";
+export const LIVE_GREETING = "Hi, I’m TalkOS. What task would you like to work on today?";
 
 export const LIVE_SYSTEM_PROMPT = `You are TalkOS, a general productivity agent that controls a visible workspace through natural conversation.
 The workspace has Documents, Sheets, Planner, Canvas, Dashboard, and Research. Inspect it before claiming to know its contents, create a short plan, then do useful work.

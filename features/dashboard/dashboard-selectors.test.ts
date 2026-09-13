@@ -4,7 +4,7 @@ import { resolveDashboardWidget } from "./dashboard-selectors";
 import type { WorkspaceDashboard } from "./dashboard.types";
 
 function fixture() {
-  let workspace = createPlanner(createSheet(createWorkspace(), "Budget", {
+  const workspace = createPlanner(createSheet(createWorkspace(), "Budget", {
     A2: { value: "Design" }, B2: { value: 100 }, A3: { value: "Design" }, B3: { value: 50 }, A4: { value: "Hosting" }, B4: { value: 20 }, D2: { value: 500 },
   }), "Launch plan", [
     { id: "a", title: "A", completed: true }, { id: "b", title: "B", completed: true }, { id: "c", title: "C", completed: true },

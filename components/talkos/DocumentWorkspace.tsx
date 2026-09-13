@@ -1,11 +1,13 @@
 "use client";
 
-import { Bold, Code2, Download, Eye, FilePlus2, Heading2, Italic, Link2, List, ListOrdered, Pencil, Quote, Save, Strikethrough, Underline, Undo2, Upload } from "lucide-react";
+import { Bold, Code2, Download, Eye, FilePlus2, FileText, Heading2, Italic, Link2, List, ListOrdered, Pencil, Plus, Quote, Save, Strikethrough, Underline, Undo2, Upload } from "lucide-react";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { createWorkspaceDocument, duplicateArtifact, editWorkspaceDocument, moveArtifactToTrash, renameArtifact, undoWorkspaceDocument } from "@/features/workspace/workspace-model";
 import { importDocumentFile } from "@/features/workspace/import-document";
 import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
 import type { WorkspaceDocument } from "@/features/workspace/workspace.types";
+import { EditableArtifactTitle } from "./EditableArtifactTitle";
+import { ArtifactNavigator, ArtifactNavigatorItem } from "./ArtifactNavigator";
 import { FileActionMenu } from "./FileActionMenu";
 import { WorkspaceResizeHandle } from "./WorkspaceResizeHandle";
 
@@ -110,18 +112,13 @@ export function DocumentWorkspace({ workspace, onChange }: Props) {
   };
 
   return <div className="document-workspace">
-    <aside className="document-list" aria-label="Workspace documents">
-      <div className="document-list__heading"><strong>Documents</strong><span>{workspace.documents.length}</span></div>
-      <div className="document-list__actions">
-        <button type="button" onClick={() => onChange(createWorkspaceDocument(workspace, "Untitled document"))}><FilePlus2 size={14} /> New</button>
-        <button type="button" onClick={() => uploadRef.current?.click()}><Upload size={14} /> Import</button>
+    <ArtifactNavigator label="Documents" count={workspace.documents.length} countLabel={`${workspace.documents.length} documents`} actions={<>
+        <button type="button" onClick={() => onChange(createWorkspaceDocument(workspace, "Untitled document"))}><Plus size={14} /> New</button>
+        <button type="button" aria-label="Import document" title="Import document" onClick={() => uploadRef.current?.click()}><Upload size={14} /></button>
         <input ref={uploadRef} className="visually-hidden" type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" onChange={(event) => { void importFile(event.target.files?.[0]); event.target.value = ""; }} />
-      </div>
-      <nav>{workspace.documents.map((document) => <div className="artifact-row" data-active={document.id === active.id} key={document.id} onClick={() => onChange({ ...workspace, activeDocumentId: document.id })}>
-        <button type="button" aria-current={document.id === active.id ? "page" : undefined}><strong>{document.title}</strong><small>{document.kind} · r{document.revision}</small></button>
-        <FileActionMenu name={document.title} onRename={(title) => onChange(renameArtifact(workspace, "document", document.id, title))} onDuplicate={() => onChange(duplicateArtifact(workspace, "document", document.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "document", document.id))} onExport={() => download(`${document.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`, document.content)} />
-      </div>)}</nav>
-    </aside>
+      </>}>
+      {workspace.documents.map((document) => <ArtifactNavigatorItem active={document.id === active.id} icon={FileText} title={document.title} meta={`${document.kind === "import" ? "Imported" : document.kind[0].toUpperCase() + document.kind.slice(1)} · Revision ${document.revision}`} key={document.id} onSelect={() => onChange({ ...workspace, activeDocumentId: document.id })} menu={<FileActionMenu name={document.title} kind="document" onRename={(title) => onChange(renameArtifact(workspace, "document", document.id, title))} onDuplicate={() => onChange(duplicateArtifact(workspace, "document", document.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "document", document.id))} onExport={() => download(`${document.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`, document.content)} />} />)}
+    </ArtifactNavigator>
     <DocumentEditor key={active.id} document={active} workspace={workspace} onChange={onChange} importMessage={message} />
     <WorkspaceResizeHandle />
   </div>;
@@ -132,29 +129,25 @@ function DocumentEditor({ document, workspace, onChange, importMessage }: { docu
   const [mode, setMode] = useState<"source" | "preview">("source");
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [draft, setDraft] = useState({
-    title: document.title,
     content: document.content,
     message: "",
     baseRevision: document.revision,
-    baseTitle: document.title,
     baseContent: document.content,
   });
   if (document.revision !== draft.baseRevision) {
-    const savedDraft = draft.title === document.title && draft.content === document.content;
-    const untouchedDraft = draft.title === draft.baseTitle && draft.content === draft.baseContent;
+    const savedDraft = draft.content === document.content;
+    const untouchedDraft = draft.content === draft.baseContent;
     setDraft({
-      title: untouchedDraft ? document.title : draft.title,
       content: untouchedDraft ? document.content : draft.content,
       message: savedDraft ? "" : untouchedDraft ? "Updated by TalkOS" : "TalkOS updated the saved version. Your unsaved draft is still here; save to review the conflict.",
       baseRevision: document.revision,
-      baseTitle: document.title,
       baseContent: document.content,
     });
   }
-  const { title, content, message } = draft;
-  const dirty = title !== document.title || content !== document.content;
+  const { content, message } = draft;
+  const dirty = content !== document.content;
   const save = () => {
-    const result = editWorkspaceDocument(workspace, document.id, content, document.revision, "user", title);
+    const result = editWorkspaceDocument(workspace, document.id, content, document.revision, "user");
     if (!result.ok) { setDraft((current) => ({ ...current, message: "This document changed while you were editing. Review it and try again." })); return; }
     onChange(result.workspace);
   };
@@ -226,9 +219,9 @@ function DocumentEditor({ document, workspace, onChange, importMessage }: { docu
     requestAnimationFrame(() => { editor.focus(); editor.setSelectionRange(selectionStart, selectionEnd); });
   };
   return <article className="document-editor">
-    <header><input aria-label="Document title" value={title} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} /><div>
+    <header><EditableArtifactTitle title={document.title} ariaLabel="Document title" onCommit={(title) => onChange(renameArtifact(workspace, "document", document.id, title))} /><div>
       <button type="button" onClick={() => onChange(undoWorkspaceDocument(workspace, document.id))} disabled={!document.history.length}><Undo2 size={14} /> Undo</button>
-      <button type="button" onClick={() => download(`${(title || "document").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`, content)}><Download size={14} /> Export</button>
+      <button type="button" onClick={() => download(`${(document.title || "document").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.md`, content)}><Download size={14} /> Export</button>
       <button className="primary-action" type="button" onClick={save} disabled={!dirty}><Save size={14} /> Save</button>
     </div></header>
     <div className="document-formatbar" role="toolbar" aria-label="Document formatting">

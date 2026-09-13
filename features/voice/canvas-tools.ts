@@ -33,7 +33,25 @@ const tool = (name: string, description: string, properties: Record<string, unkn
 
 const artifactId = { type: "string", description: "The exact canvas id returned by create_canvas, read_canvas, or get_workspace." };
 const expectedRevision = { type: "number", description: "The canvas revision returned by the latest read." };
-const operations = { type: "array", maxItems: 100, description: "Ordered operations: add_node {id,role: process|decision|sticky|text,text,x,y}; add_shape {id,shape: rectangle|ellipse|line,x,y,width,height}; connect {id,sourceId,targetId,label}; set_text {id,text}; transform {id,x,y,width,height,rotation?}; group {ids,groupId}; ungroup {groupId}; link_artifact {id,source:{kind,id}|null}; remove {ids}. Use stable unique element ids.", items: { type: "object" } };
+const operationType = (name: CanvasOperation["op"]) => ({ type: "string", enum: [name] });
+const operations = {
+  type: "array",
+  maxItems: 100,
+  description: "Ordered canvas operations. Use stable unique element ids and connect only elements created earlier in the batch or already on the canvas.",
+  items: {
+    oneOf: [
+      { type: "object", properties: { op: operationType("add_node"), id: { type: "string" }, role: { type: "string", enum: ["process", "decision", "sticky", "text"] }, text: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["op", "id", "role", "text", "x", "y"] },
+      { type: "object", properties: { op: operationType("add_shape"), id: { type: "string" }, shape: { type: "string", enum: ["rectangle", "ellipse", "line"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["op", "id", "shape", "x", "y", "width", "height"] },
+      { type: "object", properties: { op: operationType("connect"), id: { type: "string" }, sourceId: { type: "string" }, targetId: { type: "string" }, label: { type: "string" } }, required: ["op", "id", "sourceId", "targetId"] },
+      { type: "object", properties: { op: operationType("set_text"), id: { type: "string" }, text: { type: "string" } }, required: ["op", "id", "text"] },
+      { type: "object", properties: { op: operationType("transform"), id: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, rotation: { type: "number" } }, required: ["op", "id", "x", "y", "width", "height"] },
+      { type: "object", properties: { op: operationType("group"), ids: { type: "array", items: { type: "string" } }, groupId: { type: "string" } }, required: ["op", "ids", "groupId"] },
+      { type: "object", properties: { op: operationType("ungroup"), groupId: { type: "string" } }, required: ["op", "groupId"] },
+      { type: "object", properties: { op: operationType("link_artifact"), id: { type: "string" }, source: { anyOf: [{ type: "object", properties: { kind: { type: "string", enum: ["document", "sheet", "planner", "research"] }, id: { type: "string" } }, required: ["kind", "id"] }, { type: "null" }] } }, required: ["op", "id", "source"] },
+      { type: "object", properties: { op: operationType("remove"), ids: { type: "array", items: { type: "string" } } }, required: ["op", "ids"] },
+    ],
+  },
+};
 
 export const canvasTools: FunctionTool[] = [
   tool("create_canvas", "Create and open a visual canvas, optionally populated atomically with semantic operations.", { title: { type: "string" }, operations }, ["title"]),
@@ -55,7 +73,12 @@ function parseOperations(value: unknown): CanvasOperation[] | null {
   for (const raw of value) {
     if (!raw || typeof raw !== "object") return null;
     const item = raw as Record<string, unknown>;
-    const op = item.op;
+    const op = item.op ?? (
+      typeof item.role === "string" ? "add_node"
+        : typeof item.shape === "string" ? "add_shape"
+          : typeof item.sourceId === "string" && typeof item.targetId === "string" ? "connect"
+            : undefined
+    );
     if (op === "add_node" && typeof item.id === "string" && ["process", "decision", "sticky", "text"].includes(String(item.role)) && typeof item.text === "string" && finite(item.x) && finite(item.y)) {
       parsed.push({ op, id: item.id, role: item.role as "process" | "decision" | "sticky" | "text", text: item.text, x: item.x, y: item.y });
     } else if (op === "add_shape" && typeof item.id === "string" && ["rectangle", "ellipse", "line"].includes(String(item.shape)) && finite(item.x) && finite(item.y) && finite(item.width) && finite(item.height)) {

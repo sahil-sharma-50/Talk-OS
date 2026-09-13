@@ -26,22 +26,22 @@ colors:
   voice-periwinkle: "#b9c8ff"
 typography:
   section:
-    fontFamily: "Instrument Sans, Segoe UI Variable Text, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Segoe UI Variable Text, Segoe UI, Instrument Sans, system-ui, sans-serif"
     fontSize: "20px"
     fontWeight: 700
     lineHeight: 1.2
   title:
-    fontFamily: "Instrument Sans, Segoe UI Variable Text, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Segoe UI Variable Display, Segoe UI, Instrument Sans, system-ui, sans-serif"
     fontSize: "16px"
     fontWeight: 600
     lineHeight: 1.3
   body:
-    fontFamily: "Instrument Sans, Segoe UI Variable Text, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Segoe UI Variable Text, Segoe UI, Instrument Sans, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.45
   label:
-    fontFamily: "Instrument Sans, Segoe UI Variable Text, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Segoe UI Variable Text, Segoe UI, Instrument Sans, system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 600
     lineHeight: 1.35
@@ -117,7 +117,7 @@ Neutral surfaces carry sustained work. Live Green marks active or committed work
 
 ## Typography
 
-**Interface Font:** Instrument Sans, self-hosted through Next.js, with Segoe UI Variable Text and system fallbacks
+**Interface Font:** Segoe UI Variable Text/Display on Windows for native hinting, with self-hosted Instrument Sans and system fallbacks
 **Reading Font:** Source Serif 4, self-hosted through Next.js, reserved for document and research reading surfaces
 **Data Font:** Cascadia Mono with SFMono-Regular and Consolas fallbacks
 
@@ -165,7 +165,7 @@ Primary actions use Live Green with white text; secondary actions use white or s
 
 ### Workspaces and navigation
 
-Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Documents, Sheets, Planner, Canvas, and Dashboard expose a left artifact rail with a three-dot menu and a consistent title/action header. Canvas uses the neutral dotted work surface for spatial editing. Dashboard uses a responsive four-column data grid whose cards always expose their source and method. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
+Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Every artifact workspace uses the same 220-pixel navigator: a compact heading with count and actions, flat rows with a type icon, 14-pixel native UI titles, 12-pixel metadata, and a restrained one-pixel active marker. On small screens the navigator becomes a horizontal strip. Artifact action menus close on outside click and Escape. Rename replaces the action list with a compact, labeled form and explicit Cancel and Save controls. Canvas uses the neutral dotted work surface for spatial editing. Dashboard uses a responsive four-column data grid whose cards always expose their source and method. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
 
 ## Do's and Don'ts
 

@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { createPlanner, createSheet, createWorkspace } from "@/features/workspace/workspace-model";
+import { createDashboard, createPlanner, createSheet, createWorkspace } from "@/features/workspace/workspace-model";
 import { DocumentWorkspace } from "./DocumentWorkspace";
+import { DashboardWorkspace } from "./DashboardWorkspace";
 import { PlannerWorkspace } from "./PlannerWorkspace";
 import { SheetsWorkspace } from "./SheetsWorkspace";
 
@@ -80,5 +81,75 @@ describe("workspace polish", () => {
     expect(heading).not.toBeNull();
     expect(within(heading!).queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Schedule" })).not.toBeInTheDocument();
+  });
+
+  it("renames a document when its title loses focus", () => {
+    const onChange = vi.fn();
+    render(<DocumentWorkspace workspace={createWorkspace()} onChange={onChange} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Document title" }), { target: { value: "Launch brief" } });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Document title" }));
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      documents: expect.arrayContaining([expect.objectContaining({ title: "Launch brief" })]),
+    }));
+  });
+
+  it("renames sheets on blur and moves between cells with arrow keys", () => {
+    const workspace = createSheet(createWorkspace(), "Budget");
+    const onChange = vi.fn();
+    render(<SheetsWorkspace workspace={workspace} onChange={onChange} />);
+
+    const title = screen.getByRole("textbox", { name: "Sheet title" });
+    fireEvent.change(title, { target: { value: "Launch budget" } });
+    fireEvent.blur(title);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      sheets: expect.arrayContaining([expect.objectContaining({ title: "Launch budget" })]),
+    }));
+
+    const a1 = screen.getByRole("textbox", { name: "A1" });
+    a1.focus();
+    fireEvent.keyDown(a1, { key: "ArrowRight" });
+    expect(screen.getByRole("textbox", { name: "B1" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "B1" }), { key: "ArrowDown" });
+    expect(screen.getByRole("textbox", { name: "B2" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "B2" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("textbox", { name: "A2" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "A2" }), { key: "ArrowUp" });
+    expect(a1).toHaveFocus();
+  });
+
+  it("renames plans on blur and omits task scheduling controls", () => {
+    const workspace = createPlanner(createWorkspace(), "Launch plan", [{
+      id: "task-1", title: "Ship", completed: false, dueDate: "2026-09-20", startsAt: "2026-09-20T08:00:00.000Z", endsAt: "2026-09-20T09:00:00.000Z", blockedReason: "Waiting", riskLevel: "high",
+    }]);
+    const onChange = vi.fn();
+    render(<PlannerWorkspace workspace={workspace} onChange={onChange} />);
+
+    const title = screen.getByRole("textbox", { name: "Plan title" });
+    fireEvent.change(title, { target: { value: "Release plan" } });
+    fireEvent.blur(title);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      planners: expect.arrayContaining([expect.objectContaining({ title: "Release plan" })]),
+    }));
+    expect(screen.queryByText("Due")).not.toBeInTheDocument();
+    expect(screen.queryByText("Risk & blockers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Schedule")).not.toBeInTheDocument();
+  });
+
+  it("explains how dashboards use selected workspace sources", () => {
+    const workspace = createDashboard(createWorkspace(), "Launch dashboard");
+    render(<DashboardWorkspace workspace={workspace} onChange={vi.fn()} onOpenSource={vi.fn()} />);
+
+    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/select the documents, sheets, planners, and research/i);
+    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/updates automatically/i);
+    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/voice/i);
+  });
+
+  it("explains dashboard setup before the first dashboard exists", () => {
+    render(<DashboardWorkspace workspace={createWorkspace()} onChange={vi.fn()} onOpenSource={vi.fn()} />);
+
+    expect(screen.getByText(/select the Documents, Sheets, Planners, and Research/i)).toHaveTextContent(/update automatically/i);
+    expect(screen.getByText(/select the Documents, Sheets, Planners, and Research/i)).toHaveTextContent(/voice/i);
   });
 });

@@ -363,6 +363,33 @@ describe("TalkOSApp", () => {
     expect(screen.getByRole("button", { name: /stop session/i })).toBeDisabled();
   });
 
+  it("keeps the agent usable with typed input when microphone permission is blocked", async () => {
+    const user = userEvent.setup();
+    const submitText = vi.fn();
+    const adapter: VoiceAdapter = {
+      async connect(emit) {
+        emit({ type: "CONNECTION_CHANGED", connected: true, mode: "live", at: new Date().toISOString() });
+      },
+      async startListening() {
+        const error = new Error("Permission denied by system");
+        error.name = "NotAllowedError";
+        throw error;
+      },
+      stopListening() {},
+      submitText,
+      async disconnect() {},
+    };
+    render(<TalkOSApp voiceAdapterFactory={() => adapter} />);
+
+    await user.click(screen.getByRole("button", { name: /start voice agent/i }));
+
+    expect(await screen.findByText(/microphone access is blocked/i)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText(/message talkos/i), "Build a launch plan");
+    await user.click(screen.getByRole("button", { name: /send message/i }));
+    expect(submitText).toHaveBeenCalledWith("Build a launch plan");
+  });
+
   it("explains when live voice is not configured", async () => {
     const user = userEvent.setup();
     const unavailableAdapter: VoiceAdapter = {

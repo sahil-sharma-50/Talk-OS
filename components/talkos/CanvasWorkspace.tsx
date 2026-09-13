@@ -1,6 +1,6 @@
 "use client";
 
-import { AlignHorizontalDistributeCenter, Circle, Diamond, Download, FileImage, FilePlus2, ImagePlus, Minus, MousePointer2, Pencil, Redo2, Square, StickyNote, Trash2, Type, Undo2, Waypoints } from "lucide-react";
+import { AlignHorizontalDistributeCenter, Circle, Diamond, Download, FileImage, FilePlus2, ImagePlus, Minus, MousePointer2, Pencil, Plus, Redo2, Square, StickyNote, Trash2, Type, Undo2, Waypoints } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import type { CanvasElement } from "@/features/canvas/canvas.types";
 import { createCanvas } from "@/features/canvas/canvas-scene";
@@ -10,6 +10,8 @@ import { applyWorkspaceChanges, duplicateArtifact, moveArtifactToTrash, redoWork
 import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
 import { CanvasEditor, type CanvasTool } from "./CanvasEditor";
 import { CanvasOutline } from "./CanvasOutline";
+import { ArtifactNavigator, ArtifactNavigatorItem } from "./ArtifactNavigator";
+import { EditableArtifactTitle } from "./EditableArtifactTitle";
 import { FileActionMenu } from "./FileActionMenu";
 import { WorkspaceResizeHandle } from "./WorkspaceResizeHandle";
 
@@ -57,17 +59,12 @@ export function CanvasWorkspace({ workspace, onChange }: { workspace: WorkspaceS
   };
 
   return <div className="canvas-workspace">
-    <aside className="artifact-list">
-      <div className="artifact-list__heading"><strong>Canvases</strong><span>{workspace.canvases.length}</span></div>
-      <div className="artifact-list__actions artifact-list__actions--single"><button type="button" onClick={createBoard}><FilePlus2 size={14} /> New</button></div>
-      {workspace.canvases.map((canvas) => <div className="artifact-row" data-active={canvas.id === active.id} key={canvas.id} onClick={() => onChange({ ...workspace, activeCanvasId: canvas.id })}>
-        <button type="button"><strong>{canvas.title}</strong><small>{canvas.elements.length} items</small></button>
-        <FileActionMenu name={canvas.title} onRename={(name) => onChange(renameArtifact(workspace, "canvas", canvas.id, name))} onDuplicate={() => onChange(duplicateArtifact(workspace, "canvas", canvas.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "canvas", canvas.id))} onExport={() => download(`${canvas.title}.talkos-canvas.json`, { canvas, assets: workspace.canvasAssets })} />
-      </div>)}
-    </aside>
+    <ArtifactNavigator label="Canvases" count={workspace.canvases.length} countLabel={`${workspace.canvases.length} canvases`} actions={<button type="button" onClick={createBoard}><Plus size={14} /> New</button>}>
+      {workspace.canvases.map((canvas) => <ArtifactNavigatorItem active={canvas.id === active.id} icon={Waypoints} title={canvas.title} meta={`${canvas.elements.length} ${canvas.elements.length === 1 ? "item" : "items"}`} key={canvas.id} onSelect={() => onChange({ ...workspace, activeCanvasId: canvas.id })} menu={<FileActionMenu name={canvas.title} kind="canvas" onRename={(name) => onChange(renameArtifact(workspace, "canvas", canvas.id, name))} onDuplicate={() => onChange(duplicateArtifact(workspace, "canvas", canvas.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "canvas", canvas.id))} onExport={() => download(`${canvas.title}.talkos-canvas.json`, { canvas, assets: workspace.canvasAssets })} />} />)}
+    </ArtifactNavigator>
     <section className="canvas-main">
       <header className="canvas-toolbar">
-        <div className="canvas-title"><strong>{active.title}</strong><span>rev {active.revision} · scroll to zoom · Alt-drag to pan</span></div>
+        <div className="canvas-title"><EditableArtifactTitle title={active.title} ariaLabel="Canvas title" onCommit={(title) => onChange(renameArtifact(workspace, "canvas", active.id, title))} /><span>rev {active.revision} · scroll to zoom · Alt-drag to pan</span></div>
         <div role="toolbar" aria-label="Canvas tools">
           <button type="button" aria-pressed={tool === "select"} onClick={() => setTool("select")}><MousePointer2 size={15} /> Select</button>
           <button type="button" aria-pressed={tool === "draw"} onClick={() => setTool("draw")}><Pencil size={15} /> Draw</button>

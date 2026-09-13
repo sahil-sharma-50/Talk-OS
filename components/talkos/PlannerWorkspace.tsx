@@ -1,12 +1,13 @@
 "use client";
 
-import { CalendarDays, Download, FilePlus2, Plus } from "lucide-react";
+import { CalendarDays, Download, FilePlus2, ListTodo, Plus } from "lucide-react";
 import Papa from "papaparse";
 import { useState } from "react";
 import { applyWorkspaceChanges, createPlanner, duplicateArtifact, moveArtifactToTrash, renameArtifact } from "@/features/workspace/workspace-model";
-import { exportPlannerIcs, findPlannerConflicts } from "@/features/workspace/planner-export";
-import { fromPlannerDateTime, toPlannerDateTime } from "@/features/workspace/planner-datetime";
+import { exportPlannerIcs } from "@/features/workspace/planner-export";
 import type { PlannerTask, WorkspaceSnapshot } from "@/features/workspace/workspace.types";
+import { EditableArtifactTitle } from "./EditableArtifactTitle";
+import { ArtifactNavigator, ArtifactNavigatorItem } from "./ArtifactNavigator";
 import { FileActionMenu } from "./FileActionMenu";
 import { WorkspaceResizeHandle } from "./WorkspaceResizeHandle";
 
@@ -38,19 +39,13 @@ export function PlannerWorkspace({ workspace, onChange }: { workspace: Workspace
     if (result.ok) onChange(result.workspace);
   };
   const updateTask = (id: string, patch: Partial<PlannerTask>, label: string) => commit(active.tasks.map((item) => item.id === id ? { ...item, ...patch } : item), label);
-  const conflicts = new Set(findPlannerConflicts(active.tasks).flat());
   return <div className="planner-workspace">
-    <aside className="artifact-list">
-      <div className="artifact-list__heading"><strong>Plans</strong><span>{workspace.planners.length}</span></div>
-      <div className="artifact-list__actions artifact-list__actions--single"><button type="button" onClick={() => onChange(createPlanner(workspace, "Untitled plan"))}><FilePlus2 size={14} /> New</button></div>
-      {workspace.planners.map((planner) => <div className="artifact-row" data-active={planner.id === active.id} key={planner.id} onClick={() => onChange({ ...workspace, activePlannerId: planner.id })}>
-        <button type="button"><strong>{planner.title}</strong><small>{planner.tasks.length} tasks</small></button>
-        <FileActionMenu name={planner.title} onRename={(name) => onChange(renameArtifact(workspace, "planner", planner.id, name))} onDuplicate={() => onChange(duplicateArtifact(workspace, "planner", planner.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "planner", planner.id))} onExport={() => download(`${planner.title}.ics`, exportPlannerIcs(planner.tasks, planner.timezone))} />
-      </div>)}
-    </aside>
+    <ArtifactNavigator label="Plans" count={workspace.planners.length} countLabel={`${workspace.planners.length} plans`} actions={<button type="button" onClick={() => onChange(createPlanner(workspace, "Untitled plan"))}><Plus size={14} /> New</button>}>
+      {workspace.planners.map((planner) => <ArtifactNavigatorItem active={planner.id === active.id} icon={ListTodo} title={planner.title} meta={`${planner.tasks.length} ${planner.tasks.length === 1 ? "task" : "tasks"}`} key={planner.id} onSelect={() => onChange({ ...workspace, activePlannerId: planner.id })} menu={<FileActionMenu name={planner.title} kind="plan" onRename={(name) => onChange(renameArtifact(workspace, "planner", planner.id, name))} onDuplicate={() => onChange(duplicateArtifact(workspace, "planner", planner.id))} onTrash={() => onChange(moveArtifactToTrash(workspace, "planner", planner.id))} onExport={() => download(`${planner.title}.ics`, exportPlannerIcs(planner.tasks, planner.timezone))} />} />)}
+    </ArtifactNavigator>
     <section className="planner-editor">
       <header>
-        <div><strong>{active.title}</strong><span>{active.timezone}</span></div>
+        <div><EditableArtifactTitle title={active.title} ariaLabel="Plan title" onCommit={(title) => onChange(renameArtifact(workspace, "planner", active.id, title))} /><span>{active.timezone}</span></div>
         <div className="planner-exports">
           <button type="button" onClick={() => download(`${active.title}.csv`, taskCsv(active.tasks), "text/csv")}><Download size={13} /> Tasks CSV</button>
           <button type="button" onClick={() => download(`${active.title}.ics`, exportPlannerIcs(active.tasks, active.timezone))}><CalendarDays size={13} /> Calendar</button>
@@ -64,14 +59,9 @@ export function PlannerWorkspace({ workspace, onChange }: { workspace: Workspace
         setTitle("");
       }}><input aria-label="New task" placeholder="Add a task…" value={title} onChange={(event) => setTitle(event.target.value)} /><button type="submit"><Plus size={14} /> Add</button></form>
       <div className="planner-columns">
-        <section><h2>Tasks</h2>{active.tasks.length ? active.tasks.map((task) => <article className="planner-task" data-conflict={conflicts.has(task.id)} key={task.id}>
+        <section><h2>Tasks</h2>{active.tasks.length ? active.tasks.map((task) => <article className="planner-task" key={task.id}>
           <input aria-label={`Complete ${task.title}`} type="checkbox" checked={task.completed} onChange={() => updateTask(task.id, { completed: !task.completed }, `Updated ${task.title}`)} />
-          <div><strong>{task.title}</strong>{task.notes ? <p>{task.notes}</p> : null}{conflicts.has(task.id) ? <small>Overlaps another task</small> : null}</div>
-          <div className="task-dates">
-            <label>Due<input aria-label={`Due date for ${task.title}`} type="date" value={task.dueDate ?? ""} onChange={(event) => updateTask(task.id, { dueDate: event.target.value || undefined }, `Rescheduled ${task.title}`)} /></label>
-            <details className="task-health"><summary>Risk & blockers</summary><label>Blocked reason<input aria-label={`Blocked reason for ${task.title}`} value={task.blockedReason ?? ""} placeholder="Not blocked" onChange={(event) => updateTask(task.id, { blockedReason: event.target.value.trim() || undefined }, `Updated blocker for ${task.title}`)} /></label><label>Risk<select aria-label={`Risk level for ${task.title}`} value={task.riskLevel ?? ""} onChange={(event) => updateTask(task.id, { riskLevel: (event.target.value || undefined) as PlannerTask["riskLevel"] }, `Updated risk for ${task.title}`)}><option value="">Not assessed</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label></details>
-            <details><summary>Schedule</summary><label>Starts<input aria-label={`Start time for ${task.title}`} type="datetime-local" value={toPlannerDateTime(task.startsAt, active.timezone)} onChange={(event) => updateTask(task.id, { startsAt: event.target.value ? fromPlannerDateTime(event.target.value, active.timezone) : undefined }, `Rescheduled ${task.title}`)} /></label><label>Ends<input aria-label={`End time for ${task.title}`} type="datetime-local" value={toPlannerDateTime(task.endsAt, active.timezone)} onChange={(event) => updateTask(task.id, { endsAt: event.target.value ? fromPlannerDateTime(event.target.value, active.timezone) : undefined }, `Rescheduled ${task.title}`)} /></label></details>
-          </div>
+          <div><strong>{task.title}</strong>{task.notes ? <p>{task.notes}</p> : null}</div>
         </article>) : <p className="empty-copy">No tasks yet. Add one here or ask TalkOS.</p>}</section>
       </div>
     </section>

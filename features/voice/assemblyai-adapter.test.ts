@@ -6,7 +6,7 @@ import { createWorkspace } from "@/features/workspace/workspace-model";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AssemblyAI session setup", () => {
-  it("configures the stored agent greeting, workspace prompt, and tools before it becomes ready", async () => {
+  it("starts with the TalkOS greeting, prompt, and workspace tools", async () => {
     class TestSocket extends EventTarget {
       static OPEN = 1;
       readyState = 1;
@@ -52,7 +52,6 @@ describe("AssemblyAI session setup", () => {
       expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
         type: "session.update",
         session: {
-          agent_id: "agent-123",
           greeting: LIVE_GREETING,
           system_prompt: LIVE_SYSTEM_PROMPT,
           tools: workspaceTools,

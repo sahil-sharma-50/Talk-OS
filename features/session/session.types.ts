@@ -19,6 +19,13 @@ export interface ConversationTurn {
   at: string;
 }
 
+export interface SpeechCaption {
+  turnId: string;
+  text: string;
+  activeStart: number;
+  activeEnd: number;
+}
+
 export interface Activity {
   id: string;
   label: string;
@@ -62,7 +69,8 @@ export interface SessionState {
   mode: "demo" | "live";
   connected: boolean;
   voiceState: VoiceState;
-  partialTranscript: { speaker: Speaker; text: string } | null;
+  partialTranscript: { speaker: Speaker; text: string; turnId?: string } | null;
+  speechCaption: SpeechCaption | null;
   turns: ConversationTurn[];
   objective: string | null;
   constraints: string[];
@@ -80,10 +88,12 @@ export interface SessionState {
 type Timed = { at: string };
 
 export type SessionEvent =
+  | (Timed & { type: "SPEECH_CAPTION_UPDATED"; caption: SpeechCaption | null })
+  | (Timed & { type: "ACTIVITIES_CLEARED" })
   | (Timed & { type: "CONNECTION_CHANGED"; connected: boolean; mode?: "demo" | "live" })
   | (Timed & { type: "VOICE_STATE_CHANGED"; voiceState: VoiceState })
-  | (Timed & { type: "TRANSCRIPT_PARTIAL"; speaker: Speaker; text: string; replace?: boolean })
-  | (Timed & { type: "TALK_TURN_FINALIZED"; speaker: Speaker; text: string })
+  | (Timed & { type: "TRANSCRIPT_PARTIAL"; speaker: Speaker; text: string; replace?: boolean; turnId?: string })
+  | (Timed & { type: "TALK_TURN_FINALIZED"; speaker: Speaker; text: string; turnId?: string })
   | (Timed & { type: "TURNS_HYDRATED"; turns: ConversationTurn[] })
   | (Timed & { type: "OBJECTIVE_SET"; objective: string })
   | (Timed & { type: "PLAN_SET"; plan: PlanItem[]; revised?: boolean })

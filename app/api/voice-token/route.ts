@@ -4,6 +4,8 @@ const TOKEN_TTL_SECONDS = 120;
 const SESSION_LIMIT_SECONDS = 600;
 
 export async function POST(request: Request) {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) return NextResponse.json({ error: "origin_not_allowed" }, { status: 403 });
   let supplied: { apiKey?: unknown; agentId?: unknown } = {};
   try {
     if (request.headers.get("content-type")?.includes("application/json")) {
@@ -13,8 +15,13 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
   }
-  const apiKey = typeof supplied.apiKey === "string" && supplied.apiKey.trim() ? supplied.apiKey.trim() : process.env.ASSEMBLYAI_API_KEY;
-  const agentId = typeof supplied.agentId === "string" && supplied.agentId.trim() ? supplied.agentId.trim() : process.env.ASSEMBLYAI_AGENT_ID;
+  if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
+  const suppliedKey = typeof supplied.apiKey === "string" ? supplied.apiKey.trim() : "";
+  const suppliedAgent = typeof supplied.agentId === "string" ? supplied.agentId.trim() : "";
+  if (Boolean(suppliedKey) !== Boolean(suppliedAgent)) return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
+  const allowServerCredentials = process.env.NODE_ENV !== "production" || process.env.TALKOS_ALLOW_SERVER_CREDENTIALS === "true";
+  const apiKey = suppliedKey || (allowServerCredentials ? process.env.ASSEMBLYAI_API_KEY : undefined);
+  const agentId = suppliedAgent || (allowServerCredentials ? process.env.ASSEMBLYAI_AGENT_ID : undefined);
   if (!apiKey || !agentId) {
     return NextResponse.json({ error: "voice_not_configured" }, { status: 503 });
   }
@@ -45,7 +52,7 @@ export async function POST(request: Request) {
       token: data.token,
       agentId,
       expiresInSeconds: TOKEN_TTL_SECONDS,
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "voice_unavailable" }, { status: 502 });
   } finally {

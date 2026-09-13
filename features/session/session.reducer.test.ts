@@ -14,6 +14,16 @@ function action(id: string, label: string): Activity {
 }
 
 describe("sessionReducer", () => {
+  it("updates a logical user request across segments without duplicating history or clearing another speaker's partial", () => {
+    const state = reduce([
+      { type: "TALK_TURN_FINALIZED", speaker: "user", turnId: "request", text: "Open my planner", at },
+      { type: "TALK_TURN_FINALIZED", speaker: "user", turnId: "request", text: "Open my planner and create a shopping list.", at },
+      { type: "TRANSCRIPT_PARTIAL", speaker: "user", turnId: "next", text: "Add milk", replace: true, at },
+      { type: "TALK_TURN_FINALIZED", speaker: "agent", turnId: "old-reply", text: "Opening Planner.", at },
+    ]);
+    expect(state.turns.filter(turn => turn.speaker === "user")).toEqual([expect.objectContaining({ id: "request", text: "Open my planner and create a shopping list." })]);
+    expect(state.partialTranscript?.text).toBe("Add milk");
+  });
   it("interrupts the active action and rejects its stale completion", () => {
     const acting = reduce([
       { type: "ACTION_STARTED", action: action("search-1", "Searching provider docs"), at },

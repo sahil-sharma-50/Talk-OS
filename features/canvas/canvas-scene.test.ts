@@ -4,6 +4,12 @@ import { applyCanvasOperations, createCanvas } from "./canvas-scene";
 import type { CanvasElement } from "./canvas.types";
 
 describe("Canvas scene", () => {
+  it("accepts a freely drawn arrow without weakening linked connector validation", () => {
+    const result = createCanvas(createWorkspace(), "Sketch", [{ id: "free-arrow", type: "arrow", x: 100, y: 100, width: 180, height: 0, rotation: -135 }]);
+    expect(result.ok).toBe(true);
+    const invalid = createCanvas(createWorkspace(), "Broken edge", [{ id: "bad", type: "arrow", x: 0, y: 0, width: 0, height: 0, sourceId: "missing", targetId: "" }]);
+    expect(invalid.ok).toBe(false);
+  });
   it("creates an undoable board and restores it with redo", () => {
     const created = createCanvas(createWorkspace(), "TalkOS flow");
     expect(created.ok).toBe(true);

@@ -5,6 +5,7 @@ export const initialSessionState: SessionState = {
   connected: false,
   voiceState: "idle",
   partialTranscript: null,
+  speechCaption: null,
   turns: [],
   objective: null,
   constraints: [],

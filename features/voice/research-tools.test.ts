@@ -16,12 +16,32 @@ function createRuntime(apiKey = "") {
 }
 
 describe("TalkOS AssemblyAI client tools", () => {
+  it("rejects malformed writes without erasing existing work", async () => {
+    const { runtime, workspace } = createRuntime();
+    const before = workspace();
+    const edit = await executeResearchTool({ type: "tool.call", call_id: "bad", name: "edit_document", arguments: { document_id: before.activeDocumentId, expected_revision: 1 } }, runtime);
+    expect(edit.isError).toBe(true);
+    expect(workspace()).toEqual(before);
+    const sheet = await executeResearchTool({ type: "tool.call", call_id: "bad-sheet", name: "create_sheet", arguments: { title: "Invalid", cells: { AA1001: 2 } } }, runtime);
+    expect(sheet.isError).toBe(true);
+    const planner = await executeResearchTool({ type: "tool.call", call_id: "bad-planner", name: "create_planner", arguments: { title: "Invalid", tasks: [{ title: "Task", starts_at: "bad date" }] } }, runtime);
+    expect(planner.isError).toBe(true);
+  });
+
+  it("preserves concurrent artifact creations", async () => {
+    const { runtime, workspace } = createRuntime();
+    await Promise.all(["One", "Two"].map((title) => executeResearchTool({ type: "tool.call", call_id: title, name: "create_document", arguments: { title, content: title } }, runtime)));
+    expect(workspace().documents.map((item) => item.title)).toEqual(["Project notes", "One", "Two"]);
+  });
   it("declares generic workspace, research, and editing tools", () => {
     expect(workspaceTools.map((tool) => tool.name)).toEqual([
+      "open_workspace", "manage_artifact", "save_document", "redo_change", "control_activity",
       "get_workspace", "read_document", "create_document", "edit_document",
       "create_sheet", "read_sheet", "update_sheet", "create_planner", "read_planner", "update_planner",
+      "format_document", "format_sheet", "insert_sheet_rows", "rename_artifact",
+      "insert_document_content", "embed_canvas_in_document", "embed_sheet_in_document",
       "create_canvas", "read_canvas", "edit_canvas", "arrange_canvas",
-      "create_dashboard", "read_dashboard", "edit_dashboard",
+      "create_sheet_dashboard", "create_dashboard", "read_dashboard", "edit_dashboard",
       "apply_workspace_changes", "undo_change", "update_task", "search_web", "read_sources",
       "summarize_research", "export_document",
     ]);

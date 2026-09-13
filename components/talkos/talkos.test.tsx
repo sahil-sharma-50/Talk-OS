@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { DemoController } from "@/features/demo/demo-controller";
 import { decisionBrief } from "@/features/session/session.fixtures";
 import type { SessionEvent } from "@/features/session/session.types";
@@ -9,6 +9,7 @@ import { VoiceNotConfiguredError, type VoiceAdapter, type VoiceCredentials } fro
 import type { VoiceTelemetrySnapshot } from "@/features/voice/voice-telemetry";
 import type { WorkspaceRuntime } from "@/features/voice/research-tools";
 import { TalkOSApp } from "./TalkOSApp";
+beforeEach(() => sessionStorage.clear());
 
 type ControllerFactory = (emit: (event: SessionEvent) => void) => DemoController;
 
@@ -307,11 +308,11 @@ describe("TalkOSApp", () => {
     const factory = vi.fn((): VoiceAdapter => ({ async connect() {}, async startListening() {}, stopListening() {}, async disconnect() {} }));
     render(<TalkOSApp voiceAdapterFactory={factory} />);
     await user.click(screen.getByRole("tab", { name: /settings/i }));
-    await user.type(screen.getByLabelText(/assemblyai api key/i), "secret");
-    await user.type(screen.getByLabelText(/agent id/i), "person@example.com");
-    await user.click(screen.getByRole("button", { name: /start voice agent/i }));
+    await user.type(screen.getByLabelText("AssemblyAI API key", { exact: true }), "secret");
+    await user.type(screen.getByLabelText("AssemblyAI Agent ID", { exact: true }), "person@example.com");
+    await user.click(screen.getByRole("button", { name: "Save credentials" }));
     expect(factory).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(/agent id.*email/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/agent id.*email/i);
   });
 
   it("accepts session-only AssemblyAI credentials and passes them to live voice", async () => {
@@ -326,10 +327,11 @@ describe("TalkOSApp", () => {
     render(<TalkOSApp voiceAdapterFactory={factory} />);
 
     await user.click(screen.getByRole("tab", { name: /settings/i }));
-    const apiKey = screen.getByLabelText(/assemblyai api key/i);
+    const apiKey = screen.getByLabelText("AssemblyAI API key", { exact: true });
     expect(apiKey).toHaveAttribute("type", "password");
     await user.type(apiKey, "user-secret");
-    await user.type(screen.getByLabelText(/agent id/i), "agent-user");
+    await user.type(screen.getByLabelText("AssemblyAI Agent ID", { exact: true }), "agent-user");
+    await user.click(screen.getByRole("button", { name: "Save credentials" }));
     await user.click(screen.getByRole("button", { name: /start voice agent/i }));
 
     expect(factory).toHaveBeenCalledWith(
@@ -346,7 +348,8 @@ describe("TalkOSApp", () => {
     render(<TalkOSApp voiceAdapterFactory={factory} />);
 
     await user.click(screen.getByRole("tab", { name: /settings/i }));
-    await user.type(screen.getByLabelText(/assemblyai api key/i), "partial-secret");
+    await user.type(screen.getByLabelText("AssemblyAI API key", { exact: true }), "partial-secret");
+    await user.click(screen.getByRole("button", { name: "Save credentials" }));
     await user.click(screen.getByRole("button", { name: /start voice agent/i }));
 
     expect(factory).not.toHaveBeenCalled();
@@ -363,20 +366,15 @@ describe("TalkOSApp", () => {
     expect(screen.getByRole("button", { name: /stop session/i })).toBeDisabled();
   });
 
-  it("keeps the agent usable with typed input when microphone permission is blocked", async () => {
+  it("offers microphone recovery without a message composer when permission is blocked", async () => {
     const user = userEvent.setup();
-    const submitText = vi.fn();
+    const startListening = vi.fn().mockRejectedValueOnce(Object.assign(new Error("Permission denied by system"), { name: "NotAllowedError" })).mockResolvedValue(undefined);
     const adapter: VoiceAdapter = {
       async connect(emit) {
         emit({ type: "CONNECTION_CHANGED", connected: true, mode: "live", at: new Date().toISOString() });
       },
-      async startListening() {
-        const error = new Error("Permission denied by system");
-        error.name = "NotAllowedError";
-        throw error;
-      },
+      startListening,
       stopListening() {},
-      submitText,
       async disconnect() {},
     };
     render(<TalkOSApp voiceAdapterFactory={() => adapter} />);
@@ -385,9 +383,13 @@ describe("TalkOSApp", () => {
 
     expect(await screen.findByText(/microphone access is blocked/i)).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    await user.type(screen.getByPlaceholderText(/message talkos/i), "Build a launch plan");
-    await user.click(screen.getByRole("button", { name: /send message/i }));
-    expect(submitText).toHaveBeenCalledWith("Build a launch plan");
+    expect(screen.queryByRole("textbox", { name: /message talkos/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /send message/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/type below/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try microphone again/i }));
+    expect(startListening).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("button", { name: "Mute microphone" })).toBeVisible();
+    expect(screen.queryByText(/microphone access is blocked/i)).not.toBeInTheDocument();
   });
 
   it("explains when live voice is not configured", async () => {

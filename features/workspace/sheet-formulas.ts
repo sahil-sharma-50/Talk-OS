@@ -69,33 +69,60 @@ export function evaluateSheet(cells: Record<string, SheetCell>): Record<string, 
       stack.slice(stack.indexOf(address)).forEach((item) => cycleMembers.add(item));
       return "#CYCLE!";
     }
+    if (stack.length >= 128) return "#LIMIT!";
     const raw = cells[address]?.value ?? "";
-    if (typeof raw === "number" || !String(raw).startsWith("=")) return raw;
+    if (typeof raw === "number" || !String(raw).startsWith("=")) {
+      const numeric = typeof raw === "string" && raw.trim() && cells[address]?.format !== "text" && Number.isFinite(Number(raw));
+      const value = numeric ? Number(raw) : raw;
+      if (address in cells) computed[address] = value;
+      return value;
+    }
+    const expression = String(raw).slice(1).trim().toUpperCase().replace(/\$/g, "");
+    if (expression.length > 1024) return computed[address] = "#LIMIT!";
     visiting.add(address); stack.push(address);
-    const expression = String(raw).slice(1).trim().toUpperCase();
-    const functionMatch = /^(SUM|AVERAGE|MIN|MAX|COUNT)\(([^)]+)\)$/.exec(expression);
-    let value: SheetComputedValue;
-    if (functionMatch) {
-      const addresses = rangeAddresses(functionMatch[2]);
-      if (!addresses) value = "#REF!";
-      else {
-        const resolved = addresses.map(evaluate);
-        const error = resolved.find((item) => typeof item === "string" && item.startsWith("#"));
-        if (error) value = error;
-        else {
-          const numbers = resolved.map(Number).filter(Number.isFinite);
-          const fn = functionMatch[1];
-          value = fn === "COUNT" ? numbers.length : fn === "SUM" ? numbers.reduce((sum, item) => sum + item, 0)
-            : !numbers.length ? 0 : fn === "AVERAGE" ? numbers.reduce((sum, item) => sum + item, 0) / numbers.length
-            : fn === "MIN" ? Math.min(...numbers) : Math.max(...numbers);
+    const calculate = (): SheetComputedValue => {
+      if (expression.includes("#REF!")) return "#REF!";
+      let expanded = expression;
+      for (let pass = 0; pass < 64; pass++) {
+        const match = /([A-Z]+)\(([^()]*)\)/.exec(expanded);
+        if (!match) return arithmetic(expanded, evaluate);
+        const fn = match[1];
+        if (!["SUM", "AVERAGE", "MIN", "MAX", "COUNT", "COUNTA", "ROUND", "ABS"].includes(fn)) return "#NAME?";
+        const values: SheetComputedValue[] = [];
+        for (const argument of match[2].split(/[,;]/)) {
+          const arg = argument.trim();
+          if (arg.includes(":")) {
+            const addresses = rangeAddresses(arg);
+            if (!addresses) return "#REF!";
+            values.push(...addresses.map(evaluate));
+          } else if (validAddress(arg)) values.push(evaluate(arg));
+          else if (arg) values.push(arithmetic(arg, evaluate));
         }
+        const error = values.find((value) => typeof value === "string" && value.startsWith("#"));
+        if (error) return error;
+        const numbers = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+        let result: number;
+        if (fn === "ROUND") {
+          if (numbers.length !== 2 || !Number.isInteger(numbers[1]) || Math.abs(numbers[1]) > 15) return "#VALUE!";
+          const factor = 10 ** numbers[1]; result = Math.round(numbers[0] * factor) / factor;
+        } else if (fn === "ABS") { if (numbers.length !== 1) return "#VALUE!"; result = Math.abs(numbers[0]); }
+        else result = fn === "COUNT" ? numbers.length : fn === "COUNTA" ? values.filter((value) => value !== "").length : fn === "SUM" ? numbers.reduce((sum, item) => sum + item, 0) : !numbers.length ? 0 : fn === "AVERAGE" ? numbers.reduce((sum, item) => sum + item, 0) / numbers.length : fn === "MIN" ? Math.min(...numbers) : Math.max(...numbers);
+        if (!Number.isFinite(result)) return "#NUM!";
+        expanded = expanded.slice(0, match.index) + String(result) + expanded.slice(match.index + match[0].length);
       }
-    } else if (/^[A-Z]+\(/.test(expression)) value = "#NAME?";
-    else value = arithmetic(expression, evaluate);
+      return "#LIMIT!";
+    };
+    let value = calculate();
+    if (typeof value === "number" && !Number.isFinite(value)) value = "#NUM!";
     stack.pop(); visiting.delete(address); computed[address] = value;
     return value;
   };
-  Object.keys(cells).forEach(evaluate);
+  Object.keys(cells).forEach((address) => {
+    try { evaluate(address); } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      visiting.clear(); stack.length = 0; computed[address] = "#LIMIT!";
+    }
+  });
   cycleMembers.forEach((address) => { computed[address] = "#CYCLE!"; });
   return computed;
 }

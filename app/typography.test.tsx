@@ -19,9 +19,6 @@ it("gives long-form document content a dedicated reading face", () => {
   expect(globalStyles).toMatch(
     /\.document-editor\s*>\s*textarea\s*\{[^}]*font-family:\s*var\(--font-reading\)/,
   );
-  expect(globalStyles).toMatch(
-    /\.document-editor\s*>\s*textarea\s*\{[^}]*calc\(\(100%\s*-\s*68ch\)\s*\/\s*2\)/,
-  );
   expect(globalStyles).toMatch(/\.source-content\s*\{[^}]*font-family:\s*var\(--font-reading\)/);
 });
 

@@ -1,17 +1,17 @@
 ---
 name: TalkOS
-description: A precise adaptive workspace for directing everyday work by voice or text.
+description: A precise adaptive workspace for directing everyday work by voice.
 colors:
   ink: "#151923"
   text: "#202532"
-  muted: "#6e7686"
-  muted-soft: "#99a1af"
+  muted: "#636d7e"
+  muted-soft: "#636d7e"
   rule: "#e3e6eb"
   rule-strong: "#d6dae1"
   surface: "#ffffff"
   surface-subtle: "#f7f8fa"
   canvas: "#fbfcfd"
-  live: "#16a34a"
+  live: "#15803d"
   live-hover: "#12823d"
   live-soft: "#eaf8ef"
   selected: "#2563eb"
@@ -107,7 +107,7 @@ TalkOS feels like a calm productivity tool rather than a chat dashboard. A compa
 - Cool neutral surfaces, a quiet measured canvas, and restrained state color.
 - Humanist interface type with monospaced data only where precision helps.
 - Flat application chrome surrounding one gently elevated working object.
-- Motion tied to live voice energy, interruption, and drawer transitions.
+- Motion tied to live voice energy, interruption, and drawer transitions. The idle orb breathes on a 4.2-second cycle with a seven-pixel drift; its faint orbital markers turn slowly. Pointer response stays within six pixels, settles back in 240ms, and does not move the label. Reduced-motion, hidden-tab and offscreen states suspend decorative movement.
 
 ## Colors
 
@@ -157,7 +157,9 @@ The abstract organic orb is the microphone entry point. It never resembles a fac
 
 ### Conversation and drawers
 
-Only the latest one-to-one exchange stays visible. History and Activity are fixed drawers with clear close controls. The composer accepts text before microphone permission and uses the same session.
+Only the latest one-to-one exchange stays visible. History and Activity are fixed drawers with clear close controls. The rail has no message composer. The orb starts voice, microphone controls handle mute/recovery, and History anchors the bottom of the rail.
+
+Voice navigation selects the actual workspace tab and file before confirming success. Document composition opens the formatted preview at the inserted section or diagram. Canvas figures use tightly cropped, self-contained SVG snapshots with restrained captions; their placement includes the complete named section and its subsections. Later canvas edits leave the document stable until a refresh is requested.
 
 ### Buttons and fields
 
@@ -165,7 +167,7 @@ Primary actions use Live Green with white text; secondary actions use white or s
 
 ### Workspaces and navigation
 
-Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Every artifact workspace uses the same 220-pixel navigator: a compact heading with count and actions, flat rows with a type icon, 14-pixel native UI titles, 12-pixel metadata, and a restrained one-pixel active marker. On small screens the navigator becomes a horizontal strip. Artifact action menus close on outside click and Escape. Rename replaces the action list with a compact, labeled form and explicit Cancel and Save controls. Canvas uses the neutral dotted work surface for spatial editing. Dashboard uses a responsive four-column data grid whose cards always expose their source and method. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
+Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill. Every artifact workspace uses the same 220-pixel navigator: a compact heading with count and actions, flat rows with a type icon, 14-pixel native UI titles, 12-pixel metadata, and a subtle grey active-row fill. On small screens the navigator becomes a horizontal strip. Artifact action menus close on outside click and Escape. Rename replaces the action list with a compact, labeled form and explicit Cancel and Save controls. Canvas uses the neutral dotted work surface for spatial editing. Dashboard uses a responsive four-column data grid whose cards always expose their source and method. Desktop working objects may be resized from their lower-right corner. Research groups exact queries before showing their sources. Agent-driven workspace changes are always followed.
 
 ## Do's and Don'ts
 
@@ -178,7 +180,15 @@ Tabs combine a Lucide icon and label; the selected tab uses subtle neutral fill.
 
 ### Don't:
 
-- **Don't** introduce glass, fake metrics, decorative dashboard tiles, or colored diffusion outside the voice orb.
+- **Don't** introduce glass, fake metrics, decorative dashboard tiles, or decorative color without a purpose. The agent rail may use a subtle orb-tinted background; dashboard metrics and charts use semantic accents.
 - **Don't** keep conversation history, research context, or activity permanently open.
 - **Don't** turn human keystrokes into agent activity noise.
 - **Don't** imply unrestricted automation or unsupported external integrations.
+
+## User audit upgrades · 2026-09-13
+
+Live captions sit directly below the orb without a divider or chat bubbles. Writing bars, a caption caret, and spoken-state copy follow actual runtime events and respect reduced motion. Titles use a single bottom focus rule. Document body and preview begin at a 28px left inset. Settings retain independently revealable fields behind an explicit Save action. Canvas toolbars wrap, with Delete and Clear all at the far right. Sticky inserts immediately in the visible area; shape, line, and arrow tools wait for a drawing gesture. Connect links two selected shapes. Planner rows center the checkbox with the title, and a pencil opens a grouped inline editor with Save and Cancel. Dashboard widgets use restrained data colors and movable, resizable layouts that displace overlapping cards downward.
+
+## Implementation references
+
+The root `README.md` is the product entry point. `docs/ARCHITECTURE.md` describes runtime and module boundaries, while `app/README.md`, `components/talkos/README.md`, and `features/README.md` describe ownership within the source tree. Interface changes should update this design system and the closest source-boundary guide together.

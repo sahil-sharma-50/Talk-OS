@@ -16,6 +16,20 @@ function fixture() {
 }
 
 describe("dashboard selectors", () => {
+  it("ignores empty rows in category charts while rejecting missing amounts", () => {
+    const { workspace, dashboard, sheetId } = fixture();
+    dashboard.widgets = [{ id: "chart", type: "bar_chart", title: "Spending", size: "wide", order: 0, binding: { kind: "category_sum", sheetId, categoryRange: "A2:A10", amountRange: "B2:B10", currency: "EUR" } }];
+    expect(resolveDashboardWidget(workspace, dashboard, "chart", new Date())).toMatchObject({ status: "ready", value: [{ label: "Design", value: 150 }, { label: "Hosting", value: 20 }] });
+    workspace.sheets[0].cells.A5 = { value: "Unpriced" };
+    expect(resolveDashboardWidget(workspace, dashboard, "chart", new Date()).status).toBe("invalid");
+  });
+  it("rejects oversized and malformed ranges without expanding them", () => {
+    const { workspace, dashboard, sheetId } = fixture();
+    for (const range of ["A1:A1001", "A1:AA1", "A1:A2:A3"]) {
+      dashboard.widgets = [{ id: "sum", type: "metric", title: "Sum", size: "compact", order: 0, binding: { kind: "sheet_sum", sheetId, range } }];
+      expect(resolveDashboardWidget(workspace, dashboard, "sum", new Date()).status).toBe("invalid");
+    }
+  });
   it("derives progress and explicit planner metrics", () => {
     const { workspace, dashboard, plannerId } = fixture();
     dashboard.widgets = [

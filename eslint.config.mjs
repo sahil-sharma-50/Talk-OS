@@ -5,5 +5,5 @@ import nextTs from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores([".next/**", ".worktrees/**", "coverage/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", ".worktrees/**", ".playwright-cli/**", "output/**", "coverage/**", "next-env.d.ts"]),
 ]);

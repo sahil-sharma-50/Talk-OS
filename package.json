@@ -1,20 +1,36 @@
 {
   "name": "talkos",
   "version": "0.1.0",
+  "description": "A voice-directed workspace for documents, sheets, plans, canvases, dashboards, and source-backed research.",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sahil-sharma-50/Talk-OS.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sahil-sharma-50/Talk-OS/issues"
+  },
+  "homepage": "https://github.com/sahil-sharma-50/Talk-OS#readme",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest"
+    "test": "vitest",
+    "test:run": "vitest --run",
+    "check": "npm run lint && npm run typecheck && npm run test:run && npm run build"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.1.1",
     "@types/papaparse": "^5.5.2",
+    "exceljs": "^4.4.0",
     "fabric": "^7.4.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "latest",
     "next": "latest",
     "papaparse": "^5.7.0",
@@ -36,5 +52,10 @@
     "jsdom": "latest",
     "typescript": "latest",
     "vitest": "latest"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

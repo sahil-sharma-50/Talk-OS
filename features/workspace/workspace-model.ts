@@ -49,13 +49,14 @@ export function createPlanner(workspace: WorkspaceSnapshot, title: string, tasks
   return { ...workspace, planners: [...workspace.planners, planner], activePlannerId: planner.id };
 }
 
-export function editWorkspaceDocument(workspace: WorkspaceSnapshot, documentId: string, content: string, expectedRevision: number, editedBy: EditAuthor, title?: string): DocumentEditResult {
+export function editWorkspaceDocument(workspace: WorkspaceSnapshot, documentId: string, content: string, expectedRevision: number, editedBy: EditAuthor, title?: string, embeds?: WorkspaceDocument["embeds"]): DocumentEditResult {
   const existing = workspace.documents.find((document) => document.id === documentId);
   if (!existing) return { ok: false, error: "document_not_found" };
   if (existing.revision !== expectedRevision) return { ok: false, error: "document_revision_conflict", currentRevision: existing.revision };
   const updated: WorkspaceDocument = {
     ...existing, title: title?.trim() || existing.title, content, revision: existing.revision + 1, updatedAt: now(),
-    history: [...existing.history, { revision: existing.revision, content: existing.content, editedBy, editedAt: existing.updatedAt }],
+    ...(embeds ? { embeds: clone(embeds) } : {}),
+    history: [...existing.history, { revision: existing.revision, content: existing.content, ...(existing.embeds ? { embeds: clone(existing.embeds) } : {}), editedBy, editedAt: existing.updatedAt }],
   };
   return { ok: true, document: updated, workspace: { ...workspace, documents: workspace.documents.map((document) => document.id === documentId ? updated : document) } };
 }
@@ -64,7 +65,7 @@ export function undoWorkspaceDocument(workspace: WorkspaceSnapshot, documentId: 
   const existing = workspace.documents.find((document) => document.id === documentId);
   const previous = existing?.history.at(-1);
   if (!existing || !previous) return workspace;
-  const restored: WorkspaceDocument = { ...existing, content: previous.content, revision: existing.revision + 1, updatedAt: now(), history: existing.history.slice(0, -1) };
+  const restored: WorkspaceDocument = { ...existing, content: previous.content, embeds: previous.embeds, revision: existing.revision + 1, updatedAt: now(), history: existing.history.slice(0, -1) };
   return { ...workspace, documents: workspace.documents.map((document) => document.id === documentId ? restored : document) };
 }
 
@@ -79,7 +80,10 @@ export function updateWorkspaceTask(workspace: WorkspaceSnapshot, update: TaskUp
 
 export function addRetrievedSources(workspace: WorkspaceSnapshot, sources: RetrievedSource[], query = "Earlier research"): WorkspaceSnapshot {
   const byUrl = new Map(workspace.sources.map((source) => [source.url, source]));
-  sources.forEach((source) => byUrl.set(source.url, source));
+  sources.forEach((source) => {
+    const existing = byUrl.get(source.url);
+    byUrl.set(source.url, existing ? { ...source, id: existing.id, content: source.content || existing.content } : source);
+  });
   const merged = [...byUrl.values()];
   const sourceIds = sources.map((source) => byUrl.get(source.url)!.id);
   const existing = workspace.researchCollections.find((collection) => collection.query === query);
@@ -159,7 +163,10 @@ function removeArtifact(workspace: WorkspaceSnapshot, type: ArtifactType, id: st
 }
 
 export function applyWorkspaceChanges(workspace: WorkspaceSnapshot, label: string, mutations: WorkspaceMutation[], author: EditAuthor = "agent"): WorkspaceChangeResult {
+  const changedIds = new Set<string>();
   for (const mutation of mutations) {
+    if (changedIds.has(mutation.artifactId)) return { ok: false, error: "invalid_workspace_changes", artifactId: mutation.artifactId };
+    changedIds.add(mutation.artifactId);
     const artifact = findArtifact(workspace, mutation.kind, mutation.artifactId);
     if (!artifact) return { ok: false, error: "artifact_not_found", artifactId: mutation.artifactId };
     if (artifact.revision !== mutation.expectedRevision) return { ok: false, error: "revision_conflict", artifactId: mutation.artifactId, currentRevision: artifact.revision };
@@ -169,12 +176,16 @@ export function applyWorkspaceChanges(workspace: WorkspaceSnapshot, label: strin
   let next = workspace;
   for (const mutation of mutations) {
     if (mutation.kind === "document") {
-      const result = editWorkspaceDocument(next, mutation.artifactId, mutation.content, mutation.expectedRevision, author, mutation.title);
+      const result = editWorkspaceDocument(next, mutation.artifactId, mutation.content, mutation.expectedRevision, author, mutation.title, mutation.embeds);
       if (result.ok) next = result.workspace;
     } else if (mutation.kind === "sheet") {
+      const normalizedCells = Object.fromEntries(Object.entries(mutation.cells).map(([key, value]) => [key.toUpperCase(), value]));
       next = { ...next, sheets: next.sheets.map((sheet) => sheet.id === mutation.artifactId ? {
         ...sheet, revision: sheet.revision + 1, updatedAt: createdAt,
-        cells: { ...sheet.cells, ...Object.fromEntries(Object.entries(mutation.cells).map(([address, value]) => [address.toUpperCase(), { value, format: mutation.formats?.[address] ?? sheet.cells[address]?.format }])) },
+        cells: mutation.replaceCells ? clone(mutation.replaceCells) : Object.fromEntries([...new Set([...Object.keys(sheet.cells), ...Object.keys(mutation.cells), ...Object.keys(mutation.formats ?? {}), ...Object.keys(mutation.styles ?? {})].map((address) => address.toUpperCase()))].map((address) => {
+          const existing = sheet.cells[address];
+          return [address, { ...existing, value: normalizedCells[address] ?? existing?.value ?? "", format: mutation.formats?.[address] ?? existing?.format, style: { ...existing?.style, ...mutation.styles?.[address] } }];
+        })),
         chart: mutation.chart ?? sheet.chart,
       } : sheet) };
     } else if (mutation.kind === "planner") {
@@ -189,6 +200,14 @@ export function applyWorkspaceChanges(workspace: WorkspaceSnapshot, label: strin
   const after = mutations.map((mutation) => snapshot(mutation.kind, findArtifact(next, mutation.kind, mutation.artifactId)!));
   const change: WorkspaceChange = { id: makeId("change"), label: label.trim() || "Workspace updated", author, createdAt, before, after, afterRevisions, undone: false };
   return { ok: true, workspace: { ...next, changeHistory: [...next.changeHistory, change] }, change };
+}
+
+export function canUndoWorkspaceChange(workspace: WorkspaceSnapshot, change: WorkspaceChange): boolean {
+  const after = change.after ?? change.before;
+  return !change.undone && after.length > 0 && after.every((state) => {
+    const current = findArtifact(workspace, state.artifactType, state.artifact.id);
+    return current !== undefined && current.revision === change.afterRevisions[state.artifact.id];
+  });
 }
 
 export function undoLastWorkspaceChange(workspace: WorkspaceSnapshot, changeId?: string): WorkspaceChangeResult {

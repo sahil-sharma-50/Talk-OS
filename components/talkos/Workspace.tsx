@@ -1,11 +1,10 @@
 "use client";
 
-import { BarChart3, CalendarDays, Eye, EyeOff, FileText, Globe2, KeyRound, PanelRightOpen, PenTool, Settings2, ShieldCheck, Table2, Trash2, Undo2 } from "lucide-react";
-import { useState } from "react";
+import { BarChart3, CalendarDays, FileText, Globe2, PanelRightOpen, PenTool, Settings2, Table2 } from "lucide-react";
 import type { SessionState, WorkspaceView } from "@/features/session/session.types";
 import type { VoiceCredentials } from "@/features/voice/voice-adapter.types";
 import type { VoiceTelemetrySnapshot } from "@/features/voice/voice-telemetry";
-import { restoreTrashedArtifact } from "@/features/workspace/workspace-model";
+import { WorkspaceSettings } from "./WorkspaceSettings";
 import type { WorkspaceSnapshot } from "@/features/workspace/workspace.types";
 import { ActivityDrawer } from "./ActivityDrawer";
 import { DocumentWorkspace } from "./DocumentWorkspace";
@@ -27,11 +26,10 @@ interface WorkspaceProps {
   activityOpen: boolean;
   onActivityToggle: () => void;
   onUndo: (id: string) => void;
+  onClearActivity?: () => void;
 }
 
-export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceDataChange, credentials, onCredentialsChange, telemetry, activityOpen, onActivityToggle, onUndo }: WorkspaceProps) {
-  const [showSecrets, setShowSecrets] = useState(false);
-  const [agentEditable, setAgentEditable] = useState(false);
+export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceDataChange, credentials, onCredentialsChange, telemetry, activityOpen, onActivityToggle, onUndo, onClearActivity }: WorkspaceProps) {
   const tabs: Array<{ id: WorkspaceView; label: string; icon: typeof FileText }> = [
     { id: "documents", label: "Documents", icon: FileText },
     { id: "sheets", label: "Sheets", icon: Table2 },
@@ -51,31 +49,21 @@ export function Workspace({ state, workspace, onWorkspaceChange, onWorkspaceData
     const next = source.kind === "document" ? { ...workspace, activeDocumentId: source.id } : source.kind === "sheet" ? { ...workspace, activeSheetId: source.id } : source.kind === "planner" ? { ...workspace, activePlannerId: source.id } : { ...workspace, selectedResearchCollectionId: source.id };
     onWorkspaceDataChange(next); onWorkspaceChange(source.kind === "document" ? "documents" : source.kind === "sheet" ? "sheets" : source.kind === "planner" ? "planner" : "research");
   }} />;
-  if (state.activeWorkspace === "settings") panel = <div className="workspace-sheet settings-view">
-    <header><div><h2>Connect your services</h2><p>Credentials remain in this tab and are cleared when it closes.</p></div><KeyRound size={20} aria-hidden="true" /></header>
-    <form className="credentials-form" autoComplete="off" onSubmit={(event) => event.preventDefault()}>
-      <label htmlFor="assemblyai-api-key">AssemblyAI API key</label>
-      <div className="secret-field"><input id="assemblyai-api-key" name="talkos-assembly-key" type={showSecrets ? "text" : "password"} value={credentials.apiKey} onChange={(event) => onCredentialsChange({ ...credentials, apiKey: event.target.value })} autoComplete="new-password" data-1p-ignore="true" data-lpignore="true" placeholder="Paste your AssemblyAI API key" /><button type="button" onClick={() => setShowSecrets((value) => !value)} aria-label={showSecrets ? "Hide API keys" : "Show API keys"}>{showSecrets ? <EyeOff size={16} /> : <Eye size={16} />}</button></div>
-      <label htmlFor="assemblyai-agent-id">AssemblyAI Agent ID</label>
-      <input id="assemblyai-agent-id" name="talkos-voice-agent-identifier" value={credentials.agentId} readOnly={!agentEditable} onFocus={() => setAgentEditable(true)} onChange={(event) => onCredentialsChange({ ...credentials, agentId: event.target.value })} autoComplete="one-time-code" autoCapitalize="none" autoCorrect="off" spellCheck={false} data-1p-ignore="true" data-lpignore="true" placeholder="Example: 7ad24396-b822-4dca-871a-be9cc4781cf9" />
-      <label htmlFor="tavily-api-key">Tavily API key</label>
-      <div className="secret-field"><input id="tavily-api-key" name="talkos-tavily-key" type={showSecrets ? "text" : "password"} value={credentials.tavilyApiKey ?? ""} onChange={(event) => onCredentialsChange({ ...credentials, tavilyApiKey: event.target.value })} autoComplete="new-password" data-1p-ignore="true" data-lpignore="true" placeholder="Optional, for live web research" /></div>
-      <div className="credential-status" data-ready={Boolean(credentials.apiKey.trim() && credentials.agentId.trim() && !credentials.agentId.includes("@"))}><ShieldCheck size={16} /><span>{credentials.agentId.includes("@") ? "Agent ID cannot be an email address" : credentials.apiKey.trim() && credentials.agentId.trim() ? "Voice configured" : "Add both AssemblyAI fields, or use deployment settings"}{credentials.tavilyApiKey?.trim() ? " · Research configured" : ""}</span></div>
-      <button className="clear-credentials" type="button" onClick={() => onCredentialsChange({ apiKey: "", agentId: "", tavilyApiKey: "" })} disabled={!credentials.apiKey && !credentials.agentId && !credentials.tavilyApiKey}><Trash2 size={14} /> Clear</button>
-    </form>
-    <footer className="settings-privacy"><ShieldCheck size={16} /><p>Your workspace stays in this browser. Credentials are used only to establish the requested AssemblyAI and Tavily connections.</p></footer>
-    {workspace.trash.length ? <section className="trash-bin"><h3>Trash</h3>{workspace.trash.map((item) => <div key={item.id}><span>{item.artifact.title}</span><button type="button" onClick={() => onWorkspaceDataChange(restoreTrashedArtifact(workspace, item.id))}><Undo2 size={13} /> Restore</button></div>)}</section> : null}
-  </div>;
+  if (state.activeWorkspace === "settings") panel = <WorkspaceSettings credentials={credentials} onCredentialsChange={onCredentialsChange} workspace={workspace} onChange={onWorkspaceDataChange} />;
 
   return <section className="workspace" aria-label="Agent workspace">
     <div className="workspace-tabs" role="tablist" aria-label="Workspace views">
-      {tabs.map(({ id, label, icon: Icon }) => <button type="button" role="tab" id={`${id}-tab`} aria-selected={state.activeWorkspace === id} aria-controls={`${id}-panel`} onClick={() => onWorkspaceChange(id)} key={id}><Icon size={15} /> {label}</button>)}
+      {tabs.map(({ id, label, icon: Icon }, index) => <button type="button" role="tab" id={`${id}-tab`} tabIndex={state.activeWorkspace === id ? 0 : -1} aria-selected={state.activeWorkspace === id} aria-controls={state.activeWorkspace === id ? `${id}-panel` : undefined} onClick={() => onWorkspaceChange(id)} onKeyDown={(event) => {
+        const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index - 1 + tabs.length) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+        if (next < 0) return;
+        event.preventDefault(); onWorkspaceChange(tabs[next].id); document.getElementById(`${tabs[next].id}-tab`)?.focus();
+      }} key={id}><Icon size={15} /> {label}</button>)}
       <span className="workspace-tabs__meta">{workspace.documents.length + workspace.sheets.length + workspace.planners.length + workspace.canvases.length + workspace.dashboards.length} files · {workspace.sources.length} sources</span>
     </div>
     <div className="workspace-canvas" role="tabpanel" id={`${state.activeWorkspace}-panel`} aria-labelledby={`${state.activeWorkspace}-tab`} aria-label={tabs.find((tab) => tab.id === state.activeWorkspace)?.label}>
       {!activityOpen ? <button className="activity-toggle" type="button" onClick={onActivityToggle} aria-label="Open activity sidebar" aria-expanded="false" aria-controls="activity-drawer" title="Activity"><PanelRightOpen size={17} /></button> : null}
-      <div className="workspace-canvas__scroll">{panel}</div>
-      <ActivityDrawer open={activityOpen} state={state} workspace={workspace} telemetry={telemetry} onToggle={onActivityToggle} onUndo={onUndo} />
+      <div className="workspace-canvas__scroll" tabIndex={0} role="region" aria-label="Workspace content">{panel}</div>
+      <ActivityDrawer open={activityOpen} state={state} workspace={workspace} telemetry={telemetry} onToggle={onActivityToggle} onUndo={onUndo} onClear={onClearActivity} />
     </div>
   </section>;
 }

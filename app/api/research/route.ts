@@ -39,8 +39,13 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
 
-  const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) return NextResponse.json({ error: "invalid_origin" }, { status: 403 });
+  const suppliedKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+  const allowServerCredentials = process.env.NODE_ENV !== "production" || process.env.TALKOS_ALLOW_SERVER_CREDENTIALS === "true";
+  const apiKey = suppliedKey || (allowServerCredentials ? process.env.TAVILY_API_KEY?.trim() : "");
   if (!apiKey) {
     return NextResponse.json({ error: "tavily_key_required" }, { status: 401 });
   }

@@ -11,6 +11,9 @@ describe("workspace export", () => {
   it("rejects malformed or unsupported workspace files", () => {
     expect(() => parseWorkspaceExport("not json")).toThrow("invalid_workspace_file");
     expect(() => parseWorkspaceExport(JSON.stringify({ version: 4 }))).toThrow("invalid_workspace_file");
+    expect(() => parseWorkspaceExport(JSON.stringify({ version: 2 }))).toThrow("invalid_workspace_file");
+    expect(() => parseWorkspaceExport(JSON.stringify({ version: 3 }))).toThrow("invalid_workspace_file");
+    expect(() => parseWorkspaceExport(JSON.stringify({ ...createWorkspace(), documents: [null] }))).toThrow("invalid_workspace_file");
   });
 
   it("migrates a version-one workspace without losing documents or sources", () => {

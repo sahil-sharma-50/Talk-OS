@@ -9,6 +9,7 @@ function isWorkspace(value: unknown): value is WorkspaceSnapshot {
   const candidate = value as Partial<WorkspaceSnapshot>;
   return candidate.version === 4
     && Array.isArray(candidate.documents)
+    && candidate.documents.every((document) => document && typeof document.id === "string" && typeof document.title === "string" && typeof document.content === "string" && typeof document.kind === "string" && Number.isInteger(document.revision) && Array.isArray(document.history))
     && typeof candidate.activeDocumentId === "string"
     && Array.isArray(candidate.sources)
     && Array.isArray(candidate.sheets)
@@ -90,7 +91,7 @@ export function parseWorkspaceExport(raw: string): WorkspaceSnapshot {
     const parsed: unknown = JSON.parse(raw);
     if (isWorkspace(parsed)) return parsed;
     const migrated = migrateWorkspace(parsed);
-    if (!migrated) throw new Error("invalid_workspace_file");
+    if (!isWorkspace(migrated)) throw new Error("invalid_workspace_file");
     return migrated;
   } catch {
     throw new Error("invalid_workspace_file");
@@ -102,7 +103,12 @@ export async function loadWorkspace(): Promise<WorkspaceSnapshot | null> {
   const database = await openDatabase();
   return new Promise<WorkspaceSnapshot | null>((resolve, reject) => {
     const request = database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).get(CURRENT_KEY);
-    request.onsuccess = () => resolve(isWorkspace(request.result) ? request.result : migrateWorkspace(request.result));
+    request.onsuccess = () => {
+      if (request.result === undefined) { resolve(null); return; }
+      const candidate = isWorkspace(request.result) ? request.result : migrateWorkspace(request.result);
+      if (isWorkspace(candidate)) resolve(candidate);
+      else reject(new Error("invalid_workspace_file"));
+    };
     request.onerror = () => reject(request.error);
   }).finally(() => database.close());
 }
@@ -115,5 +121,6 @@ export async function saveWorkspace(workspace: WorkspaceSnapshot): Promise<void>
     transaction.objectStore(STORE_NAME).put(workspace, CURRENT_KEY);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error("workspace_save_aborted"));
   }).finally(() => database.close());
 }

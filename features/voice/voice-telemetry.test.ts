@@ -2,14 +2,27 @@ import { describe, expect, it } from "vitest";
 import { emptyVoiceTelemetry, recordVoiceTelemetry } from "./voice-telemetry";
 
 describe("recordVoiceTelemetry", () => {
-  it("derives endpoint and response latency from event receipt times", () => {
+  it("keeps event identifiers unique when word deltas arrive in the same millisecond", () => {
+    const state = Array.from({ length: 80 }).reduce<typeof emptyVoiceTelemetry>((current) => recordVoiceTelemetry(current, { type: "transcript.agent.delta", delta: "word" }, 1000), emptyVoiceTelemetry);
+    expect(new Set(state.events.map((event) => event.id)).size).toBe(40);
+  });
+  it("measures response at audible playback, ignoring tool replies and repeated audio", () => {
     let state = emptyVoiceTelemetry;
     state = recordVoiceTelemetry(state, { type: "input.speech.stopped" }, 1000);
     state = recordVoiceTelemetry(state, { type: "transcript.user", text: "Change it" }, 1125);
     state = recordVoiceTelemetry(state, { type: "reply.started" }, 1340);
+    expect(state.responseLatencyMs).toBeNull();
+    state = recordVoiceTelemetry(state, { type: "talkos.playback.started" }, 2000);
 
     expect(state.endpointLatencyMs).toBe(125);
-    expect(state.responseLatencyMs).toBe(215);
+    expect(state.responseLatencyMs).toBe(875);
+    state = recordVoiceTelemetry(state, { type: "reply.started" }, 2200);
+    state = recordVoiceTelemetry(state, { type: "talkos.playback.started" }, 2300);
+    expect(state.responseLatencyMs).toBe(875);
+    state = recordVoiceTelemetry(state, { type: "transcript.user", text: "Next request" }, 3000);
+    expect(state.responseLatencyMs).toBeNull();
+    state = recordVoiceTelemetry(state, { type: "talkos.playback.started" }, 3500);
+    expect(state.responseLatencyMs).toBe(500);
   });
 
   it("keeps only the forty most recent telemetry events", () => {

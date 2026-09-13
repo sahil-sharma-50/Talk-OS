@@ -8,7 +8,7 @@ TalkOS is a browser-based productivity workspace agent for founders, operators, 
 
 ## Product purpose
 
-The user states an outcome by voice or text. TalkOS inspects the local workspace, forms a visible plan, and works across Documents, Sheets, Planner, Canvas, Dashboard, and source-backed Research. It can create a brief, calculate a budget, schedule the work, map a system visually, and compose a live project view from exact selected sources.
+The user states an outcome by voice. TalkOS inspects the local workspace, forms a visible plan, and works across Documents, Sheets, Planner, Canvas, Dashboard, and source-backed Research. It can create a brief, calculate a budget, schedule the work, map a system visually, and compose a live project view from exact selected sources.
 
 ## Highest-value AssemblyAI use case
 
@@ -24,20 +24,23 @@ TalkOS is built for mid-task redirection. While the agent is researching or upda
 
 ## Capabilities and boundaries
 
-- Realtime AssemblyAI voice, streamed transcripts, typed messages in the same session, barge-in, and client tools.
-- Documents with TXT/Markdown/text-PDF import, revision checks, draft preservation, undo, and Markdown export.
-- Sheets with CSV import/export, 1,000×26 limits, arithmetic and common formulas, formatting, and a lightweight chart.
+- Realtime AssemblyAI voice, streamed transcripts, microphone mute/recovery controls, barge-in, and client tools.
+- Documents with TXT/Markdown/text-PDF import, revision checks, draft preservation, section-aware insertion, rendered canvas snapshots, undo, and portable Markdown export. Snapshots refresh only on request.
+- Sheets with CSV/XLSX import and CSV export, 1,000×26 limits, arithmetic and common formulas, formatting, and a lightweight chart.
 - Planner with tasks, manual dates and times, conflict detection, task CSV, and calendar ICS export.
 - Canvas with freehand drawing, images, shapes, semantic diagrams, layout, grouping, pan/zoom, and SVG/PNG/JSON export.
 - Dashboard with explicit document, sheet, planner, and research selection; live derived metrics; accessible category charts; deadlines; and freshness-aware summaries.
 - Tavily-backed public-web research grouped by exact search query, with inspectable URLs, extracted text, and summaries.
 - Atomic cross-tool changes with revision validation and one visible undo receipt.
+- Explicit voice navigation for every workspace tab and exact files; document source/preview, saving, duplication, Trash restoration, Activity controls, and document downloads use the same state as the visible interface.
 - Local IndexedDB persistence for artifacts, conversation history, research, trash, and changes.
 - No Google/OAuth dependency, cloud database, fake evidence, autonomous purchasing, or unrestricted computer control.
 
 ## Privacy and cost model
 
-Users can bring AssemblyAI and Tavily credentials for the current page session; AssemblyAI may alternatively be configured by the deployment. Credentials are never written to IndexedDB. Workspace content remains on the device. The application requires no paid database and can run on a basic Next.js deployment.
+Users can bring AssemblyAI and Tavily credentials saved in sessionStorage for the current browser tab; AssemblyAI and Tavily may alternatively be configured through development environment variables. Credentials are never written to IndexedDB. Workspace content remains on the device. The application requires no paid database and can run on a basic Next.js deployment.
+
+The public Vercel deployment uses visitor-provided credentials and requires no project secrets. Server-funded credentials are an optional private-deployment mode that must be explicitly enabled behind authentication and usage limits.
 
 ## Product principles
 
@@ -48,3 +51,7 @@ Users can bring AssemblyAI and Tavily credentials for the current page session; 
 - Cite public facts with links; never invent evidence.
 - Keep spoken updates short while the workspace holds the detail.
 - Maintain keyboard access, visible focus, clear status, and reduced-motion support.
+
+## Product documentation
+
+The root README is the onboarding entry point. Architecture, deployment, security, contribution, and source-boundary documentation live in the linked repository guides so product behavior and operational guidance can evolve together.

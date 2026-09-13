@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { createDashboard, createPlanner, createSheet, createWorkspace } from "@/features/workspace/workspace-model";
@@ -7,10 +8,15 @@ import { DashboardWorkspace } from "./DashboardWorkspace";
 import { PlannerWorkspace } from "./PlannerWorkspace";
 import { SheetsWorkspace } from "./SheetsWorkspace";
 
+function DocumentHarness() {
+  const [workspace, setWorkspace] = useState(createWorkspace);
+  return <DocumentWorkspace workspace={workspace} onChange={setWorkspace} />;
+}
+
 describe("workspace polish", () => {
   it("formats the selected document text as Markdown", async () => {
     const user = userEvent.setup();
-    render(<DocumentWorkspace workspace={createWorkspace()} onChange={vi.fn()} />);
+    render(<DocumentHarness />);
     const editor = screen.getByRole("textbox", { name: /document content/i }) as HTMLTextAreaElement;
     editor.focus();
     editor.setSelectionRange(0, 4);
@@ -22,7 +28,7 @@ describe("workspace polish", () => {
 
   it("renders formatted Markdown in document preview", async () => {
     const user = userEvent.setup();
-    render(<DocumentWorkspace workspace={createWorkspace()} onChange={vi.fn()} />);
+    render(<DocumentHarness />);
     const editor = screen.getByRole("textbox", { name: /document content/i });
     fireEvent.change(editor, { target: { value: "# Launch\n\n**Ready** and _clear_." } });
 
@@ -35,7 +41,7 @@ describe("workspace polish", () => {
 
   it("exposes active formatting and toggles it off", async () => {
     const user = userEvent.setup();
-    render(<DocumentWorkspace workspace={createWorkspace()} onChange={vi.fn()} />);
+    render(<DocumentHarness />);
     const editor = screen.getByRole("textbox", { name: /document content/i }) as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: "**Drop** the details here." } });
     editor.focus();
@@ -50,7 +56,7 @@ describe("workspace polish", () => {
   });
 
   it("provides a keyboard-accessible canvas resize handle", () => {
-    render(<DocumentWorkspace workspace={createWorkspace()} onChange={vi.fn()} />);
+    render(<DocumentHarness />);
     const handle = screen.getByRole("button", { name: /resize workspace canvas/i });
     const surface = handle.parentElement as HTMLElement;
     Object.defineProperty(surface, "getBoundingClientRect", {
@@ -119,7 +125,7 @@ describe("workspace polish", () => {
     expect(a1).toHaveFocus();
   });
 
-  it("renames plans on blur and omits task scheduling controls", () => {
+  it("renames plans on blur and keeps task details in a compact disclosure", () => {
     const workspace = createPlanner(createWorkspace(), "Launch plan", [{
       id: "task-1", title: "Ship", completed: false, dueDate: "2026-09-20", startsAt: "2026-09-20T08:00:00.000Z", endsAt: "2026-09-20T09:00:00.000Z", blockedReason: "Waiting", riskLevel: "high",
     }]);
@@ -132,7 +138,7 @@ describe("workspace polish", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       planners: expect.arrayContaining([expect.objectContaining({ title: "Release plan" })]),
     }));
-    expect(screen.queryByText("Due")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit Ship" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Risk & blockers")).not.toBeInTheDocument();
     expect(screen.queryByText("Schedule")).not.toBeInTheDocument();
   });
@@ -142,7 +148,8 @@ describe("workspace polish", () => {
     render(<DashboardWorkspace workspace={workspace} onChange={vi.fn()} onOpenSource={vi.fn()} />);
 
     expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/select the documents, sheets, planners, and research/i);
-    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/updates automatically/i);
+    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/metrics update automatically/i);
+    expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/summaries.*refreshing/i);
     expect(screen.getByRole("note", { name: "How Dashboard works" })).toHaveTextContent(/voice/i);
   });
 

@@ -22,7 +22,8 @@ export function mergeCanvasTransform(elements: CanvasElement[], target: CanvasTr
     x: target.left,
     y: target.top,
     width: Math.max(1, target.width * target.scaleX),
-    height: Math.max(1, target.height * target.scaleY),
+    height: Math.max(["line", "arrow"].includes(element.type) ? 0 : 1, target.height * target.scaleY),
+    ...(element.type === "freehand" ? { points: element.points?.map(([x, y]) => [x * target.scaleX, y * target.scaleY] as [number, number]) } : {}),
     rotation: target.angle,
     text: typeof target.text === "string" ? target.text : element.text,
   } : before?.groupId && element.groupId === before.groupId ? {

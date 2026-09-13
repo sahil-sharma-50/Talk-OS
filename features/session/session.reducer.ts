@@ -22,10 +22,15 @@ function updateActivity(
 
 export function sessionReducer(state: SessionState, event: SessionEvent): SessionState {
   switch (event.type) {
+    case "SPEECH_CAPTION_UPDATED":
+      return { ...state, speechCaption: event.caption };
+    case "ACTIVITIES_CLEARED":
+      return { ...state, activities: state.activities.filter((activity) => activity.status === "active"), planRevision: 0 };
     case "CONNECTION_CHANGED":
       return {
         ...state,
         connected: event.connected,
+        voiceState: event.connected ? "listening" : "idle",
         mode: event.mode ?? state.mode,
         error: null,
       };
@@ -35,29 +40,24 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       if (!event.text) return state;
       const text = event.replace
         ? event.text
-        : state.partialTranscript?.speaker === event.speaker
+        : state.partialTranscript?.speaker === event.speaker && (!event.turnId || !state.partialTranscript.turnId || event.turnId === state.partialTranscript.turnId)
         ? joinTranscriptDelta(state.partialTranscript.text, event.text)
         : event.text;
       return {
         ...state,
-        partialTranscript: { speaker: event.speaker, text },
+        partialTranscript: { speaker: event.speaker, text, ...(event.turnId ? { turnId: event.turnId } : {}) },
       };
     }
     case "TALK_TURN_FINALIZED": {
       const text = event.text.trim();
       if (!text) return state;
+      const existing = event.turnId ? state.turns.find(turn => turn.id === event.turnId && turn.speaker === event.speaker) : undefined;
+      const clearsPartial = state.partialTranscript?.speaker === event.speaker && (!event.turnId || !state.partialTranscript.turnId || state.partialTranscript.turnId === event.turnId);
+      const finalized = { id: existing?.id ?? event.turnId ?? `turn-${crypto.randomUUID()}`, speaker: event.speaker, text, at: existing?.at ?? event.at };
       return {
         ...state,
-        partialTranscript: null,
-        turns: [
-          ...state.turns,
-          {
-            id: `turn-${state.turns.length + 1}-${event.at}`,
-            speaker: event.speaker,
-            text,
-            at: event.at,
-          },
-        ],
+        partialTranscript: clearsPartial ? null : state.partialTranscript,
+        turns: existing ? state.turns.map(turn => turn === existing ? finalized : turn) : [...state.turns, finalized],
       };
     }
     case "TURNS_HYDRATED":
@@ -94,6 +94,7 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       return {
         ...state,
         voiceState: "interrupted",
+        speechCaption: null,
         partialTranscript: state.partialTranscript?.speaker === "agent" ? null : state.partialTranscript,
         invalidatedActionIds: actionId && !state.invalidatedActionIds.includes(actionId)
           ? [...state.invalidatedActionIds, actionId]
@@ -142,6 +143,7 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         connected: false,
         voiceState: "idle",
         partialTranscript: null,
+        speechCaption: null,
         activities: state.activities.map((activity) =>
           activity.status === "active" ? { ...activity, status: "interrupted" } : activity,
         ),
@@ -149,7 +151,7 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
     case "SESSION_RESET":
       return { ...initialSessionState, mode: state.mode };
     case "SESSION_ERROR":
-      return { ...state, voiceState: "error", error: event.message };
+      return { ...state, voiceState: "error", speechCaption: null, error: event.message };
     default:
       return state;
   }

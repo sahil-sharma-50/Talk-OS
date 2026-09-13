@@ -51,8 +51,8 @@ export interface CanvasAsset {
 }
 
 export type CanvasOperation =
-  | { op: "add_node"; id: string; role: "process" | "decision" | "sticky" | "text"; text: string; x: number; y: number }
-  | { op: "add_shape"; id: string; shape: "rectangle" | "ellipse" | "line"; x: number; y: number; width: number; height: number }
+  | { op: "add_node"; id: string; role: "process" | "decision" | "sticky" | "text"; text: string; x: number; y: number; width?: number; height?: number; fill?: string }
+  | { op: "add_shape"; id: string; shape: "rectangle" | "ellipse" | "line" | "arrow"; x: number; y: number; width: number; height: number }
   | { op: "connect"; id: string; sourceId: string; targetId: string; label: string }
   | { op: "set_text"; id: string; text: string }
   | { op: "transform"; id: string; x: number; y: number; width: number; height: number; rotation?: number }

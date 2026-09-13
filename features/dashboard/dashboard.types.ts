@@ -5,7 +5,8 @@ export type DashboardSource =
   | { kind: "research"; id: string };
 
 export type DashboardWidgetSize = "compact" | "wide";
-interface DashboardWidgetBase { id: string; title: string; size: DashboardWidgetSize; order: number }
+export interface DashboardLayout { x: number; y: number; width: number; height: number }
+interface DashboardWidgetBase { id: string; title: string; size: DashboardWidgetSize; order: number; layout?: DashboardLayout; color?: string }
 
 export type DashboardBinding =
   | { kind: "task_progress"; plannerIds: string[] }

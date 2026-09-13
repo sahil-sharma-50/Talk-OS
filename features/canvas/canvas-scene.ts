@@ -1,3 +1,4 @@
+import { canvasLabelSize } from "./canvas-geometry";
 import type { EditAuthor, WorkspaceSnapshot, WorkspaceChangeResult } from "@/features/workspace/workspace.types";
 import type { CanvasElement, CanvasOperation, CanvasOperationResult, WorkspaceCanvas } from "./canvas.types";
 
@@ -6,7 +7,7 @@ export const MAX_CANVAS_OPERATIONS = 100;
 
 const now = () => new Date().toISOString();
 const finite = (...values: number[]) => values.every(Number.isFinite);
-const isConnector = (element: CanvasElement) => element.type === "arrow";
+const isConnector = (element: CanvasElement) => element.type === "arrow" && (element.sourceId !== undefined || element.targetId !== undefined);
 
 function validate(elements: CanvasElement[]): string | null {
   if (elements.length > MAX_CANVAS_ELEMENTS) return "Canvas exceeds 2,000 elements.";
@@ -70,7 +71,7 @@ export function applyCanvasOperations(canvas: WorkspaceCanvas, expectedRevision:
     const index = byId();
     if (operation.op === "add_node") {
       if (index.has(operation.id)) return { ok: false, error: "invalid_canvas_scene", detail: `Element id ${operation.id} is invalid or duplicated.` };
-      elements.push({ id: operation.id, type: operation.role, text: operation.text.trim(), x: operation.x, y: operation.y, width: 180, height: operation.role === "sticky" ? 140 : 80 });
+      elements.push({ id: operation.id, type: operation.role, text: operation.text.trim(), x: operation.x, y: operation.y, ...canvasLabelSize(operation.role, operation.text), ...(operation.width ? { width: operation.width } : {}), ...(operation.height ? { height: operation.height } : {}), ...(operation.fill ? { fill: operation.fill } : {}) });
     } else if (operation.op === "add_shape") {
       if (index.has(operation.id)) return { ok: false, error: "invalid_canvas_scene", detail: `Element id ${operation.id} is invalid or duplicated.` };
       elements.push({ id: operation.id, type: operation.shape, x: operation.x, y: operation.y, width: operation.width, height: operation.height });
@@ -81,6 +82,7 @@ export function applyCanvasOperations(canvas: WorkspaceCanvas, expectedRevision:
       const element = index.get(operation.id);
       if (!element) return { ok: false, error: "invalid_canvas_scene", detail: `Element ${operation.id} does not exist.` };
       element.text = operation.text.trim();
+      if (!["arrow", "line", "image", "freehand"].includes(element.type)) element.height = Math.max(element.height, canvasLabelSize(element.type, element.text).height);
     } else if (operation.op === "transform") {
       const element = index.get(operation.id);
       if (!element) return { ok: false, error: "invalid_canvas_scene", detail: `Element ${operation.id} does not exist.` };

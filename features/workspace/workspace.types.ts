@@ -5,11 +5,18 @@ export type DocumentKind = "notes" | "brief" | "import";
 export type EditAuthor = "user" | "agent";
 export type ArtifactType = "document" | "sheet" | "planner" | "canvas" | "dashboard";
 
-export interface DocumentRevision { revision: number; content: string; editedBy: EditAuthor; editedAt: string }
-export interface WorkspaceDocument { id: string; title: string; kind: DocumentKind; content: string; revision: number; updatedAt: string; history: DocumentRevision[] }
+interface DocumentEmbedSource { id: string; title: string; sourceId: string; sourceRevision: number; createdAt: string }
+export interface CanvasDocumentEmbed extends DocumentEmbedSource { kind: "canvas"; svg: string }
+export interface SheetSnapshotCell { address: string; text: string; numeric: boolean; style?: SheetCellStyle }
+export interface SheetDocumentEmbed extends DocumentEmbedSource { kind: "sheet"; range: string; sourceRange?: string; headerRow: boolean; rows: SheetSnapshotCell[][] }
+export type DocumentEmbed = CanvasDocumentEmbed | SheetDocumentEmbed;
+export type DocumentEmbeds = Record<string, DocumentEmbed>;
+export interface DocumentRevision { revision: number; content: string; embeds?: DocumentEmbeds; editedBy: EditAuthor; editedAt: string }
+export interface WorkspaceDocument { id: string; title: string; kind: DocumentKind; content: string; embeds?: DocumentEmbeds; revision: number; updatedAt: string; history: DocumentRevision[] }
 
 export type SheetCellFormat = "text" | "number" | "currency" | "percent";
-export interface SheetCell { value: string | number; format?: SheetCellFormat }
+export interface SheetCellStyle { bold?: boolean; italic?: boolean; underline?: boolean; align?: "left" | "center" | "right"; color?: string; background?: string }
+export interface SheetCell { value: string | number; format?: SheetCellFormat; style?: SheetCellStyle }
 export interface SheetChart { title: string; labelRange: string; valueRange: string }
 export interface WorkspaceSheet { id: string; title: string; revision: number; updatedAt: string; cells: Record<string, SheetCell>; chart?: SheetChart }
 
@@ -44,6 +51,8 @@ export interface WorkspaceConversationTurn { id: string; speaker: "user" | "agen
 
 export interface WorkspaceSnapshot {
   version: 4;
+  documentDrafts?: Record<string, { content: string; baseRevision: number; baseContent: string; embeds?: DocumentEmbeds }>;
+  documentView?: { documentId: string; mode: "source" | "preview"; section?: string; embedId?: string; requestId?: string };
   documents: WorkspaceDocument[];
   activeDocumentId: string;
   sheets: WorkspaceSheet[];
@@ -71,8 +80,8 @@ export type DocumentEditResult =
   | { ok: false; error: "document_not_found" | "document_revision_conflict"; currentRevision?: number };
 
 export type WorkspaceMutation =
-  | { kind: "document"; artifactId: string; expectedRevision: number; content: string; title?: string }
-  | { kind: "sheet"; artifactId: string; expectedRevision: number; cells: Record<string, string | number>; formats?: Record<string, SheetCellFormat>; chart?: SheetChart }
+  | { kind: "document"; artifactId: string; expectedRevision: number; content: string; title?: string; embeds?: DocumentEmbeds }
+  | { kind: "sheet"; artifactId: string; expectedRevision: number; cells: Record<string, string | number>; formats?: Record<string, SheetCellFormat>; styles?: Record<string, SheetCellStyle>; replaceCells?: Record<string, SheetCell>; chart?: SheetChart }
   | { kind: "planner"; artifactId: string; expectedRevision: number; tasks: PlannerTask[] }
   | { kind: "canvas"; artifactId: string; expectedRevision: number; elements: CanvasElement[] }
   | { kind: "dashboard"; artifactId: string; expectedRevision: number; definition: WorkspaceDashboard };
@@ -80,4 +89,4 @@ export type WorkspaceMutation =
 export type { DashboardSource, DashboardWidget, WorkspaceDashboard };
 export type WorkspaceChangeResult =
   | { ok: true; workspace: WorkspaceSnapshot; change: WorkspaceChange }
-  | { ok: false; error: "artifact_not_found" | "revision_conflict"; artifactId: string; currentRevision?: number };
+  | { ok: false; error: "artifact_not_found" | "revision_conflict" | "invalid_workspace_changes"; artifactId: string; currentRevision?: number };

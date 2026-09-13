@@ -18,5 +18,10 @@ describe("planner helpers", () => {
     expect(ics).not.toContain("Buy flowers");
     expect(ics).toContain("Blocked: Legal\\; review");
     expect(ics).toContain("Risk: high");
+    expect(ics).toMatch(/DTSTAMP:\d{8}T\d{6}Z/);
+  });
+
+  it("omits invalid date ranges instead of crashing the export", () => {
+    expect(exportPlannerIcs([{ id: "bad", title: "Bad", completed: false, startsAt: "invalid", endsAt: "invalid" }], "UTC")).not.toContain("BEGIN:VEVENT");
   });
 });

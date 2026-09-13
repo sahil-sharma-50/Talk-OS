@@ -12,7 +12,7 @@ describe("desktop workspace layout", () => {
 
   it("fills the available panel inside one equal responsive inset", () => {
     expect(styles).toContain("--workspace-inset:");
-    expect(styles).toMatch(/@media \(min-width: 781px\)[\s\S]*?\.workspace-canvas__scroll \{[^}]*padding: var\(--workspace-inset\);[^}]*overflow: hidden;/);
+    expect(styles).toMatch(/@media \(min-width: 781px\)[\s\S]*?\.workspace-canvas__scroll \{[^}]*padding: var\(--workspace-inset\);[^}]*overflow: auto;/);
     expect(styles).toMatch(/\.workspace-canvas__scroll > \.dashboard-workspace[^{]*\{[^}]*width: 100%;[^}]*height: 100%;[^}]*min-height: 0;/);
   });
 });

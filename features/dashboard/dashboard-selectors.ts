@@ -7,6 +7,7 @@ const columnNumber = (column: string) => [...column].reduce((value, letter) => v
 const columnName = (number: number) => { let result = ""; for (let value = number; value; value = Math.floor((value - 1) / 26)) result = String.fromCharCode(((value - 1) % 26) + 65) + result; return result; };
 
 function rangeAddresses(range: string): string[] | null {
+  if (!/^[A-Z](?:[1-9]\d{0,2}|1000)(?::[A-Z](?:[1-9]\d{0,2}|1000))?$/.test(range.trim().toUpperCase())) return null;
   const [startRaw, endRaw = startRaw] = range.trim().toUpperCase().split(":");
   const start = CELL.exec(startRaw); const end = CELL.exec(endRaw);
   if (!start || !end) return null;
@@ -100,8 +101,10 @@ function resolve(widget: DashboardWidget, workspace: WorkspaceSnapshot, dashboar
   }
   const categories = sheetValues(sheet, binding.categoryRange); const amounts = sheetValues(sheet, binding.amountRange); if (categories.status !== "ready") return categories; if (amounts.status !== "ready") return amounts;
   if (categories.value.length !== amounts.value.length) return { status: "invalid", reason: "Category and amount ranges must have the same number of cells." };
-  const numbers = numberValues(amounts.value); if (!numbers || numbers.length !== amounts.value.length) return { status: "invalid", reason: "Every category amount must be numeric." };
-  const grouped = new Map<string, number>(); categories.value.forEach((label, index) => { const name = String(label).trim() || "Uncategorized"; grouped.set(name, (grouped.get(name) ?? 0) + numbers[index]); });
+  const rows = categories.value.map((label, index) => ({ label: String(label).trim(), amount: amounts.value[index] })).filter(({ label, amount }) => label || String(amount).trim());
+  if (!rows.length) return { status: "empty", reason: "No category data in the selected ranges." };
+  if (rows.some(({ amount }) => !String(amount).trim() || !Number.isFinite(Number(amount)))) return { status: "invalid", reason: "Every category amount must be numeric." };
+  const grouped = new Map<string, number>(); rows.forEach(({ label, amount }) => { const name = label || "Uncategorized"; grouped.set(name, (grouped.get(name) ?? 0) + Number(amount)); });
   return { status: "ready", value: [...grouped].map(([label, value]) => ({ label, value })), sourceLabel: sheet.title, method: `${binding.categoryRange} grouped with ${binding.amountRange}` };
 }
 

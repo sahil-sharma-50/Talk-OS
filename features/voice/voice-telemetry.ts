@@ -5,6 +5,7 @@ export type VoiceTelemetryKind =
   | "transcript_streaming"
   | "turn_finalized"
   | "reply_started"
+  | "playback_started"
   | "reply_completed"
   | "interruption_candidate"
   | "interruption_confirmed"
@@ -29,12 +30,14 @@ export interface VoiceTelemetryEntry {
 }
 
 export interface VoiceTelemetrySnapshot {
+  eventSequence?: number;
   connected: boolean;
   events: VoiceTelemetryEntry[];
   endpointLatencyMs: number | null;
   responseLatencyMs: number | null;
   lastEndpointAt: number | null;
   lastUserFinalAt: number | null;
+  awaitingResponse?: boolean;
 }
 
 export const emptyVoiceTelemetry: VoiceTelemetrySnapshot = {
@@ -72,6 +75,8 @@ function eventEntry(event: AssemblyTelemetryEvent, receivedAt: number): Omit<Voi
       return { kind: "turn_finalized", label: "Agent turn finalized", detail: transcriptDetail, receivedAt };
     case "reply.started":
       return { kind: "reply_started", label: "Reply started", receivedAt };
+    case "talkos.playback.started":
+      return { kind: "playback_started", label: "Speech playback started", receivedAt };
     case "reply.done":
       return event.status === "interrupted"
         ? { kind: "interruption_confirmed", label: "Interruption confirmed", receivedAt }
@@ -100,18 +105,20 @@ export function recordVoiceTelemetry(
   event: AssemblyTelemetryEvent,
   receivedAt: number,
 ): VoiceTelemetrySnapshot {
+  if (event.type === "talkos.playback.started" && !snapshot.awaitingResponse) return snapshot;
   const entry = eventEntry(event, receivedAt);
   if (!entry) return snapshot;
 
   const events = [
     ...snapshot.events,
-    { ...entry, id: `${event.type ?? "event"}-${receivedAt}-${snapshot.events.length}` },
+    { ...entry, id: `${event.type ?? "event"}-${receivedAt}-${snapshot.eventSequence ?? 0}` },
   ].slice(-40);
   let connected = snapshot.connected;
   let endpointLatencyMs = snapshot.endpointLatencyMs;
   let responseLatencyMs = snapshot.responseLatencyMs;
   let lastEndpointAt = snapshot.lastEndpointAt;
   let lastUserFinalAt = snapshot.lastUserFinalAt;
+  let awaitingResponse = snapshot.awaitingResponse ?? false;
 
   if (event.type === "session.ready") connected = true;
   if (event.type === "session.ended") connected = false;
@@ -119,17 +126,22 @@ export function recordVoiceTelemetry(
   if (event.type === "transcript.user") {
     endpointLatencyMs = lastEndpointAt === null ? null : Math.max(0, receivedAt - lastEndpointAt);
     lastUserFinalAt = receivedAt;
+    responseLatencyMs = null;
+    awaitingResponse = true;
   }
-  if (event.type === "reply.started") {
-    responseLatencyMs = lastUserFinalAt === null ? null : Math.max(0, receivedAt - lastUserFinalAt);
+  if (event.type === "talkos.playback.started") {
+    responseLatencyMs = lastUserFinalAt === null ? null : Math.max(0, Math.round(receivedAt - lastUserFinalAt));
+    awaitingResponse = false;
   }
 
   return {
+    eventSequence: (snapshot.eventSequence ?? 0) + 1,
     connected,
     events,
     endpointLatencyMs,
     responseLatencyMs,
     lastEndpointAt,
     lastUserFinalAt,
+    awaitingResponse,
   };
 }

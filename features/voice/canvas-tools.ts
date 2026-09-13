@@ -40,8 +40,8 @@ const operations = {
   description: "Ordered canvas operations. Use stable unique element ids and connect only elements created earlier in the batch or already on the canvas.",
   items: {
     oneOf: [
-      { type: "object", properties: { op: operationType("add_node"), id: { type: "string" }, role: { type: "string", enum: ["process", "decision", "sticky", "text"] }, text: { type: "string" }, x: { type: "number" }, y: { type: "number" } }, required: ["op", "id", "role", "text", "x", "y"] },
-      { type: "object", properties: { op: operationType("add_shape"), id: { type: "string" }, shape: { type: "string", enum: ["rectangle", "ellipse", "line"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["op", "id", "shape", "x", "y", "width", "height"] },
+      { type: "object", properties: { op: operationType("add_node"), id: { type: "string" }, role: { type: "string", enum: ["process", "decision", "sticky", "text"] }, text: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, fill: { type: "string", description: "Optional light hex fill color." } }, required: ["op", "id", "role", "text", "x", "y"] },
+      { type: "object", properties: { op: operationType("add_shape"), id: { type: "string" }, shape: { type: "string", enum: ["rectangle", "ellipse", "line", "arrow"] }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["op", "id", "shape", "x", "y", "width", "height"] },
       { type: "object", properties: { op: operationType("connect"), id: { type: "string" }, sourceId: { type: "string" }, targetId: { type: "string" }, label: { type: "string" } }, required: ["op", "id", "sourceId", "targetId"] },
       { type: "object", properties: { op: operationType("set_text"), id: { type: "string" }, text: { type: "string" } }, required: ["op", "id", "text"] },
       { type: "object", properties: { op: operationType("transform"), id: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, rotation: { type: "number" } }, required: ["op", "id", "x", "y", "width", "height"] },
@@ -54,7 +54,7 @@ const operations = {
 };
 
 export const canvasTools: FunctionTool[] = [
-  tool("create_canvas", "Create and open a visual canvas, optionally populated atomically with semantic operations.", { title: { type: "string" }, operations }, ["title"]),
+  tool("create_canvas", "Create a polished canvas. New diagram nodes are spaced and arranged automatically; use short labels and connected process/decision nodes. Set auto_layout false only for an explicitly positioned composition.", { title: { type: "string" }, operations, auto_layout: { type: "boolean" }, direction: { type: "string", enum: ["LR", "TB"] } }, ["title"]),
   tool("read_canvas", "Read the active or specified semantic canvas scene and revision.", { canvas_id: artifactId }),
   tool("edit_canvas", "Apply an atomic revision-safe set of semantic operations to a canvas.", { canvas_id: artifactId, expected_revision: expectedRevision, operations }, ["canvas_id", "expected_revision", "operations"]),
   tool("arrange_canvas", "Arrange selected diagram nodes while preserving drawings, images, and unrelated items.", { canvas_id: artifactId, expected_revision: expectedRevision, node_ids: { type: "array", items: { type: "string" } }, direction: { type: "string", enum: ["LR", "TB"] } }, ["canvas_id", "expected_revision", "node_ids"]),
@@ -80,9 +80,10 @@ function parseOperations(value: unknown): CanvasOperation[] | null {
             : undefined
     );
     if (op === "add_node" && typeof item.id === "string" && ["process", "decision", "sticky", "text"].includes(String(item.role)) && typeof item.text === "string" && finite(item.x) && finite(item.y)) {
-      parsed.push({ op, id: item.id, role: item.role as "process" | "decision" | "sticky" | "text", text: item.text, x: item.x, y: item.y });
-    } else if (op === "add_shape" && typeof item.id === "string" && ["rectangle", "ellipse", "line"].includes(String(item.shape)) && finite(item.x) && finite(item.y) && finite(item.width) && finite(item.height)) {
-      parsed.push({ op, id: item.id, shape: item.shape as "rectangle" | "ellipse" | "line", x: item.x, y: item.y, width: item.width, height: item.height });
+      if ((item.width !== undefined && (!finite(item.width) || item.width < 24)) || (item.height !== undefined && (!finite(item.height) || item.height < 24)) || (item.fill !== undefined && (typeof item.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(item.fill)))) return null;
+      parsed.push({ op, id: item.id, role: item.role as "process" | "decision" | "sticky" | "text", text: item.text, x: item.x, y: item.y, ...(finite(item.width) ? { width: item.width } : {}), ...(finite(item.height) ? { height: item.height } : {}), ...(typeof item.fill === "string" ? { fill: item.fill } : {}) });
+    } else if (op === "add_shape" && typeof item.id === "string" && ["rectangle", "ellipse", "line", "arrow"].includes(String(item.shape)) && finite(item.x) && finite(item.y) && finite(item.width) && finite(item.height)) {
+      parsed.push({ op, id: item.id, shape: item.shape as "rectangle" | "ellipse" | "line" | "arrow", x: item.x, y: item.y, width: item.width, height: item.height });
     } else if (op === "connect" && typeof item.id === "string" && typeof item.sourceId === "string" && typeof item.targetId === "string") {
       parsed.push({ op, id: item.id, sourceId: item.sourceId, targetId: item.targetId, label: typeof item.label === "string" ? item.label : "" });
     } else if (op === "set_text" && typeof item.id === "string" && typeof item.text === "string") {
@@ -120,11 +121,19 @@ export async function executeCanvasTool(call: CanvasToolCall, runtime: CanvasRun
     const preview: WorkspaceCanvas = { id: "canvas-preview", title: text(args, "title"), revision: 0, updatedAt: new Date().toISOString(), elements: [] };
     const populated = applyCanvasOperations(preview, 0, parsed);
     if (!populated.ok) return failure(call, populated.error, { detail: populated.detail });
-    const created = createCanvas(workspace, text(args, "title"), populated.canvas.elements, "agent");
+    let scene = populated.canvas;
+    if (args.auto_layout !== false) {
+      const ids = scene.elements.filter((item) => ["process", "decision", "sticky", "text"].includes(item.type)).map((item) => item.id);
+      if (ids.length) {
+        const arranged = arrangeCanvas(scene, ids, args.direction === "LR" ? "LR" : "TB", signal);
+        if (arranged.ok) scene = arranged.canvas;
+      }
+      scene = { ...scene, elements: scene.elements.map((item) => item.fill ? item : { ...item, ...(item.type === "decision" ? { fill: "#fef3c7" } : item.type === "process" ? { fill: "#eff6ff" } : {}) }) };
+    }
+    const created = createCanvas(workspace, text(args, "title"), scene.elements, "agent");
     if (!created.ok) return failure(call, created.error, { artifact_id: created.artifactId });
     if (signal?.aborted) return failure(call, "interrupted");
     runtime.setWorkspace(created.workspace);
-    runtime.setActiveView?.("canvas");
     const canvas = created.workspace.canvases.at(-1)!;
     return success(call, `${canvas.title} created`, { canvas_id: canvas.id, revision: canvas.revision, change_id: created.change.id });
   }
@@ -161,6 +170,5 @@ export async function executeCanvasTool(call: CanvasToolCall, runtime: CanvasRun
   if (!committed.ok) return failure(call, committed.error, { artifact_id: committed.artifactId, current_revision: committed.currentRevision });
   if (signal?.aborted) return failure(call, "interrupted");
   runtime.setWorkspace(committed.workspace);
-  runtime.setActiveView?.("canvas");
   return success(call, call.name === "edit_canvas" ? "Canvas updated" : "Canvas arranged", { canvas_id: canvas.id, revision: committed.change.afterRevisions[canvas.id], change_id: committed.change.id });
 }

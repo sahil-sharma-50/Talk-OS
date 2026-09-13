@@ -18,7 +18,10 @@ function titleFromFilename(filename: string) {
 
 async function readPdf(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  try {
+  const pdf = await loadingTask.promise;
   if (pdf.numPages > MAX_PDF_PAGES) throw new Error("pdf_page_limit");
 
   const pages: string[] = [];
@@ -34,6 +37,7 @@ async function readPdf(file: File) {
   const content = pages.join("\n\n").trim();
   if (!content) throw new Error("pdf_has_no_text");
   return content;
+  } finally { await loadingTask.destroy(); }
 }
 
 export async function importDocumentFile(file: File): Promise<ImportedDocument> {

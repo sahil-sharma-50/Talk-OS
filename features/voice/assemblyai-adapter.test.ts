@@ -1,11 +1,78 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAssemblyAIAdapter, normalizeVoiceEvent } from "./assemblyai-adapter";
+import { createAssemblyAIAdapter, normalizeVoiceEvent, VOICE_INPUT_CONFIG } from "./assemblyai-adapter";
 import { LIVE_GREETING, LIVE_SYSTEM_PROMPT, workspaceTools } from "./research-tools";
 import { createWorkspace } from "@/features/workspace/workspace-model";
+import { sessionReducer } from "@/features/session/session.reducer";
+import { initialSessionState } from "@/features/session/session.fixtures";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("AssemblyAI session setup", () => {
+  it("retains a segmented Planner request across tool replies and recovers from a wrong creation tool", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; resume = vi.fn(); close = vi.fn(); });
+    vi.stubGlobal("fetch", async () => Response.json({ token: "test-token" }));
+    let workspace = createWorkspace();
+    let session = initialSessionState;
+    const activeView = vi.fn();
+    const adapter = createAssemblyAIAdapter(undefined, {
+      getWorkspace: () => workspace, setWorkspace: next => { workspace = next; }, getTavilyApiKey: () => "", setActiveView: activeView,
+    });
+    await adapter.connect(event => { session = sessionReducer(session, event); });
+    const receive = (message: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
+    const sent = () => socket.send.mock.calls.map(([value]) => JSON.parse(value));
+    try {
+      receive({ type: "session.ready" });
+      receive({ type: "transcript.user", item_id: "phrase-one", text: "Open my planner" });
+      // A tool-only reply is not the end of the user's spoken request.
+      receive({ type: "reply.started", reply_id: "fc-open" });
+      receive({ type: "tool.call", call_id: "open", name: "open_workspace", arguments: { view: "planner" } });
+      receive({ type: "reply.done", reply_id: "fc-open", status: "completed" });
+      await vi.waitFor(() => expect(activeView).toHaveBeenCalledWith("planner"));
+      receive({ type: "transcript.user.delta", item_id: "phrase-two", text: "and create a shopping" });
+      expect(session.partialTranscript?.text).toBe("Open my planner and create a shopping");
+      receive({ type: "transcript.user", item_id: "phrase-two", text: "and create a shopping list." });
+      receive({ type: "transcript.user", item_id: "phrase-two", text: "and create a shopping list." });
+      expect(session.turns.filter(turn => turn.speaker === "user")).toHaveLength(1);
+      expect(session.turns.at(-1)?.text).toBe("Open my planner and create a shopping list.");
+      expect(sent().filter(message => message.type === "session.update").at(-1).session.system_prompt).toContain('"latest_user_request":"Open my planner and create a shopping list.","requested_workspace":"planner"');
+      receive({ type: "tool.call", call_id: "wrong", name: "create_sheet", arguments: { title: "Shopping list" } });
+      receive({ type: "reply.done", status: "completed" });
+      await vi.waitFor(() => expect(sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "wrong", is_error: true })));
+      expect(workspace.sheets).toHaveLength(0);
+      const wrongResult = JSON.parse(sent().find(message => message.call_id === "wrong").result);
+      expect(wrongResult).toMatchObject({ error: "workspace_target_mismatch", requested_workspace: "planner" });
+      receive({ type: "tool.call", call_id: "right", name: "create_planner", arguments: { title: "Shopping list", tasks: [{ title: "Milk" }, { title: "Apples" }] } });
+      receive({ type: "reply.done", status: "completed" });
+      await vi.waitFor(() => expect(workspace.planners).toHaveLength(1));
+      expect(activeView).toHaveBeenLastCalledWith("planner");
+      expect(workspace.planners[0].tasks.map(task => task.title)).toEqual(["Milk", "Apples"]);
+      receive({ type: "transcript.agent.delta", reply_id: "spoken", delta: "Your list is ready." });
+      receive({ type: "input.speech.started" });
+      receive({ type: "transcript.user", item_id: "new-request", text: "Actually use Sheets and make a budget." });
+      receive({ type: "transcript.user", item_id: "phrase-one", text: "Open my planner" });
+      expect(session.turns.at(-1)?.text).toBe("Actually use Sheets and make a budget.");
+      receive({ type: "tool.call", call_id: "budget", name: "create_sheet", arguments: { title: "Budget" } });
+      receive({ type: "reply.done", status: "completed" });
+      await vi.waitFor(() => expect(workspace.sheets).toHaveLength(1));
+      expect(activeView).toHaveBeenLastCalledWith("sheets");
+    } finally { await adapter.disconnect(); }
+  });
+  it("does not open a socket when stopped while a token is pending", async () => {
+    let release: (response: Response) => void = () => {};
+    vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => { release = resolve; }));
+    const opened = vi.fn();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; addEventListener() {} constructor() { opened(); } });
+    vi.stubGlobal("AudioContext", class { resume = vi.fn(); });
+    const adapter = createAssemblyAIAdapter();
+    const connecting = adapter.connect(vi.fn());
+    await adapter.disconnect();
+    release(new Response(JSON.stringify({ token: "temporary", agentId: "agent-123" })));
+    await connecting.catch(() => undefined);
+    expect(opened).not.toHaveBeenCalled();
+  });
   it("starts with the TalkOS greeting, prompt, and workspace tools", async () => {
     class TestSocket extends EventTarget {
       static OPEN = 1;
@@ -54,6 +121,7 @@ describe("AssemblyAI session setup", () => {
         session: {
           greeting: LIVE_GREETING,
           system_prompt: LIVE_SYSTEM_PROMPT,
+          input: VOICE_INPUT_CONFIG,
           tools: workspaceTools,
         },
       });
@@ -75,7 +143,7 @@ describe("AssemblyAI session setup", () => {
       expect(telemetry).toHaveBeenLastCalledWith(expect.objectContaining({
         connected: true,
         endpointLatencyMs: expect.any(Number),
-        responseLatencyMs: expect.any(Number),
+        responseLatencyMs: null,
       }));
 
       const duplicate = new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "same-call", name: "create_canvas", arguments: { title: "Only once" } }) });
@@ -84,7 +152,7 @@ describe("AssemblyAI session setup", () => {
       await vi.waitFor(() => expect(setWorkspace).toHaveBeenCalledOnce());
 
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-follow", name: "search_web", arguments: { query: "voice agents" } }) }));
-      expect(activeView).toHaveBeenCalledWith("research");
+      await vi.waitFor(() => expect(activeView).toHaveBeenCalledWith("research"));
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "tool.call", call_id: "call-live", name: "get_workspace", arguments: {} }) }));
       socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "input.speech.started" }) }));
       expect(emit).toHaveBeenCalledWith(expect.objectContaining({ type: "INTERRUPTION_STARTED", actionId: "call-live" }));
@@ -102,10 +170,7 @@ describe("AssemblyAI session setup", () => {
           expect.objectContaining({ kind: "interruption_confirmed" }),
         ]),
       }));
-      expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).not.toContainEqual(expect.objectContaining({
-        type: "tool.result",
-        call_id: "call-live",
-      }));
+      expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).not.toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "call-live" }));
     } finally {
       await adapter.disconnect();
     }
@@ -125,10 +190,31 @@ describe("AssemblyAI session setup", () => {
     socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
     socket.send.mockClear();
     adapter.submitText?.("Build my budget");
+    expect(socket.send).not.toHaveBeenCalled();
+    socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "reply.done", status: "completed" }) }));
     expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toEqual([
+      { type: "session.update", session: { system_prompt: expect.stringContaining('"latest_user_request":"Build my budget"') } },
       { type: "conversation.message", role: "user", content: "Build my budget" },
-      { type: "reply.create" },
+      { type: "reply.create", instructions: "Build my budget" },
     ]);
+    await adapter.disconnect();
+  });
+
+  it("waits for the current tool reply to finish even when the previous reply is done", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; resume = vi.fn(); close = vi.fn(); });
+    vi.stubGlobal("fetch", async () => Response.json({ token: "test-token" }));
+    const adapter = createAssemblyAIAdapter(); await adapter.connect(vi.fn());
+    const receive = (message: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
+    receive({ type: "session.ready" }); receive({ type: "reply.done", status: "completed" });
+    socket.send.mockClear();
+    receive({ type: "tool.call", call_id: "next-read", name: "search_web", arguments: { query: "product news" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(socket.send).not.toHaveBeenCalled();
+    receive({ type: "reply.done", status: "completed" });
+    expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "next-read" }));
     await adapter.disconnect();
   });
 
@@ -140,16 +226,17 @@ describe("AssemblyAI session setup", () => {
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ token: "test-token", agentId: "agent-123" })));
     const adapter = createAssemblyAIAdapter();
     await adapter.connect(vi.fn());
-    socket.dispatchEvent(new Event("open"));
-    socket.send.mockClear();
-
     adapter.submitText?.("Make a launch plan");
     expect(socket.send).not.toHaveBeenCalled();
+    socket.dispatchEvent(new Event("open"));
+    expect(JSON.parse(socket.send.mock.calls[0][0]).session.greeting).toBeUndefined();
+    socket.send.mockClear();
 
     socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
     expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toEqual([
+      { type: "session.update", session: { system_prompt: expect.stringContaining('"latest_user_request":"Make a launch plan"') } },
       { type: "conversation.message", role: "user", content: "Make a launch plan" },
-      { type: "reply.create" },
+      { type: "reply.create", instructions: "Make a launch plan" },
     ]);
     await adapter.disconnect();
   });
@@ -175,14 +262,26 @@ describe("AssemblyAI session setup", () => {
     socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "session.ready" }) }));
     await adapter.startListening();
     const samples = new Int16Array([0, 16_384, -16_384, 8_192]);
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
     port.onmessage?.(new MessageEvent("message", { data: samples.buffer }));
     expect(level).toHaveBeenCalledWith(expect.any(Number));
     expect(level.mock.calls.at(-1)?.[0]).toBeGreaterThan(0.2);
+    for (let i = 0; i < 100; i++) port.onmessage?.(new MessageEvent("message", { data: samples.buffer }));
+    expect(level).toHaveBeenCalledTimes(1);
+    expect(socket.send.mock.calls.filter(([data]) => JSON.parse(data).type === "input.audio")).toHaveLength(101);
+    clock.mockReturnValue(40);
+    port.onmessage?.(new MessageEvent("message", { data: samples.buffer }));
+    expect(level).toHaveBeenCalledTimes(2);
+    clock.mockRestore();
     await adapter.disconnect();
   });
 });
 
 describe("normalizeVoiceEvent", () => {
+  it("uses fast turn-taking with no added interruption delay", () => {
+    expect(VOICE_INPUT_CONFIG).toMatchObject({ transcription_mode: "min_latency", turn_detection: { interrupt_response: true, interruption_delay: 0 } });
+    expect(VOICE_INPUT_CONFIG.turn_detection).not.toHaveProperty("min_silence");
+  });
   it("maps a final user transcript to a finalized TalkOS turn", () => {
     expect(
       normalizeVoiceEvent({

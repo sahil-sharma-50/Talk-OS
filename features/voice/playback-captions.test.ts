@@ -46,3 +46,14 @@ it("does not invent captions for missing or invalid timing data", () => {
   reply.addAudio(0, 1);
   expect(reply.sample(.5)).toBeNull();
 });
+
+it("paces an untimed final transcript across the queued audio", () => {
+  const reply = new TimedReplyCaptions("fallback");
+  reply.addAudio(10, 3);
+  reply.setText("One two three");
+
+  expect(reply.sample(9.9)?.text).toBe("");
+  expect(reply.sample(10.2)?.text).toBe("One");
+  expect(reply.sample(11.2)?.text).toBe("One two");
+  expect(reply.sample(12.2)?.text).toBe("One two three");
+});

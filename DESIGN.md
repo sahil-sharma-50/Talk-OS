@@ -159,6 +159,10 @@ The abstract organic orb is the microphone entry point. It never resembles a fac
 
 Only the latest one-to-one exchange stays visible. History and Activity are fixed drawers with clear close controls. The rail has no message composer. The orb starts voice, microphone controls handle mute/recovery, and History anchors the bottom of the rail.
 
+Both speakers' live text follows its latest visible words as it overflows. Scrolling back pauses following without losing the reader's position; Follow transcript or Follow voice, the End key, or scrolling back to the bottom resumes it. Live following uses immediate viewport updates rather than repeatedly restarted smooth animations.
+
+User partial transcripts render as received, independently of the assistant's audio-timed captions. Frequent voice updates must not re-render the open document, sheet, planner, research reader, canvas, or dashboard; real artifact changes remain immediate.
+
 Voice navigation selects the actual workspace tab and file before confirming success. Document composition opens the formatted preview at the inserted section or diagram. Canvas figures use tightly cropped, self-contained SVG snapshots with restrained captions; their placement includes the complete named section and its subsections. Later canvas edits leave the document stable until a refresh is requested.
 
 ### Buttons and fields

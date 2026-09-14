@@ -39,4 +39,11 @@ describe("spoken request continuity", () => {
     request.accept("Open my planner.", undefined, true);
     expect(request.accept("Create a shopping list.", undefined, true)?.text).toBe("Open my planner. Create a shopping list.");
   });
+  it("reconciles an anonymous live partial with the provider's identified final without duplicating words", () => {
+    const request = new SpokenRequest();
+    const partial = request.accept("Create an Android", undefined, false)!;
+    expect(request.accept("Create an Android app", undefined, false)?.text).toBe("Create an Android app");
+    expect(request.accept("Create an Android app.", "final-id", true)).toMatchObject({ text: "Create an Android app.", turnId: partial.turnId });
+    expect(request.accept("And research the audience.", "next-id", true)?.text).toBe("Create an Android app. And research the audience.");
+  });
 });

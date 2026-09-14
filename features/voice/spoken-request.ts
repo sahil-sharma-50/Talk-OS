@@ -7,6 +7,7 @@ export class SpokenRequest {
   private nextRequest = false;
   private actionResponse = false;
   private anonymousId: string | undefined;
+  get id() { return this.turnId; }
   get text() { return this.phrases.map(phrase => phrase.text).join(" "); }
   responseStarted() { this.nextRequest = true; }
   actionResponded() { this.actionResponse = true; }
@@ -14,6 +15,12 @@ export class SpokenRequest {
     const value = text.trim(); if (!value || itemId && this.retired.has(itemId)) return null;
     const id = itemId ?? this.anonymousId ?? `phrase-${crypto.randomUUID()}`;
     let existing = this.phrases.find(phrase => phrase.id === id);
+    // Some deployments identify only the final event. Adopt its pending partial
+    // instead of keeping both the provisional text and the completed sentence.
+    if (!existing && itemId && this.anonymousId) {
+      existing = this.phrases.find(phrase => phrase.id === this.anonymousId && !phrase.final);
+      if (existing) existing.id = itemId;
+    }
     if (existing?.final && (!final || existing.text === value)) return null;
     // A brief acknowledgment after a visible action starts a new exchange even
     // before its audio arrives. Continued instructions (including short tails)

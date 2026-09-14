@@ -17,7 +17,7 @@ function SpeechStatus({ voiceState, compact = false }: { voiceState?: SessionSta
   return <div className="agent-writing" role="status"><span aria-hidden="true"><i /><i /><i /></span>{voiceState === "acting" ? "Updating your workspace" : voiceState === "thinking" ? "Thinking through your request" : compact ? "Speaking" : "Speaking · Live captions"}</div>;
 }
 
-function ReplyCaption({ text, caption, partial, live, voiceState }: { text: string; caption?: SpeechCaption | null; partial: boolean; live: boolean; voiceState?: SessionState["voiceState"] }) {
+function TranscriptMessage({ speaker, text, caption, partial, live, voiceState }: { speaker: "user" | "agent"; text: string; caption?: SpeechCaption | null; partial: boolean; live: boolean; voiceState?: SessionState["voiceState"] }) {
   const replyRef = useRef<HTMLElement>(null);
   const [following, setFollowing] = useState(true);
   useLayoutEffect(() => { if (following && replyRef.current) followCaption(replyRef.current); }, [text, following]);
@@ -38,13 +38,13 @@ function ReplyCaption({ text, caption, partial, live, voiceState }: { text: stri
   };
   const active = caption && caption.activeEnd > caption.activeStart;
   return <>
-    <article ref={replyRef} className="exchange-message" tabIndex={0} data-speaker="agent" data-partial={partial || undefined} data-timed={Boolean(caption)} aria-label="TalkOS"
+    <article ref={replyRef} className="exchange-message" tabIndex={0} data-speaker={speaker} data-partial={partial || undefined} data-timed={Boolean(caption)} aria-label={speaker === "user" ? "You" : "TalkOS"}
       onWheel={event => { if (event.deltaY < 0) pause(); }} onTouchStart={pause} onPointerDown={pause}
       onKeyDown={event => { if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pause(); if (event.key === "End") setFollowing(true); }}
       onScroll={event => { const el = event.currentTarget; if (!following && el.scrollHeight - el.clientHeight - el.scrollTop <= 4) setFollowing(true); }}>
       <p>{active ? <>{text.slice(0, caption.activeStart)}<mark key={`${caption.activeStart}-${caption.activeEnd}`} className="caption-word">{text.slice(caption.activeStart, caption.activeEnd)}</mark>{text.slice(caption.activeEnd)}</> : text}</p>
     </article>
-    {live ? <div className="caption-footer"><SpeechStatus voiceState={voiceState} compact={!following} />{!following ? <button type="button" className="caption-follow" onClick={() => setFollowing(true)}><ArrowDown size={13} aria-hidden="true" />Follow voice</button> : null}</div> : null}
+    {(speaker === "agent" && live) || !following ? <div className="caption-footer">{speaker === "agent" && live ? <SpeechStatus voiceState={voiceState} compact={!following} /> : null}{!following ? <button type="button" className="caption-follow" onClick={() => setFollowing(true)}><ArrowDown size={13} aria-hidden="true" />{speaker === "user" ? "Follow transcript" : "Follow voice"}</button> : null}</div> : null}
   </>;
 }
 
@@ -62,6 +62,7 @@ export function LatestExchange({ partialTranscript, turns, voiceState, speechCap
     .at(-1) ?? null;
 
   const userText = partialTranscript?.speaker === "user" ? partialTranscript.text : savedRequest;
+  const requestId = partialTranscript?.speaker === "user" ? partialTranscript.turnId ?? latestUser?.id ?? "speaking" : latestUser?.id;
   const agentMessage = partialTranscript?.speaker === "agent"
     ? partialTranscript
     : partialTranscript?.speaker === "user"
@@ -76,11 +77,9 @@ export function LatestExchange({ partialTranscript, turns, voiceState, speechCap
   return (
     <section className="latest-exchange" data-empty={!userText && replyText === undefined && !showStatus || undefined} data-live={live} aria-label="Latest conversation" aria-live={live ? "off" : "polite"}>
       {userText ? (
-        <article key={latestUser?.id ?? "speaking"} className="exchange-message" tabIndex={0} data-speaker="user" data-partial={partialTranscript?.speaker === "user" || undefined} aria-label="You">
-          <p>{userText}</p>
-        </article>
+        <TranscriptMessage key={requestId} speaker="user" text={userText} partial={partialTranscript?.speaker === "user"} live={partialTranscript?.speaker === "user"} />
       ) : null}
-      {replyText !== undefined ? <ReplyCaption key={replyId} text={replyText} caption={caption} partial={partialTranscript?.speaker === "agent"} live={showStatus} voiceState={voiceState} /> : showStatus ? <SpeechStatus voiceState={voiceState} /> : null}
+      {replyText !== undefined ? <TranscriptMessage key={replyId} speaker="agent" text={replyText} caption={caption} partial={partialTranscript?.speaker === "agent"} live={showStatus} voiceState={voiceState} /> : showStatus ? <SpeechStatus voiceState={voiceState} /> : null}
     </section>
   );
 }

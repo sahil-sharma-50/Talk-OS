@@ -97,7 +97,7 @@ describe("voice tool result latency", () => {
       expect(h.navigate).toHaveBeenCalledExactlyOnceWith("sheets");
       expect(h.sent().some(m => m.type === "tool.result")).toBe(false);
       h.receive({ type: "reply.done", status: "completed" });
-      await vi.waitFor(() => expect(h.sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "open", is_error: false })));
+      await vi.waitFor(() => expect(h.sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "open" })));
       expect(h.navigate).toHaveBeenCalledExactlyOnceWith("sheets");
       h.call("open", "open_workspace", { view: "sheets" });
       h.receive({ type: "reply.done", status: "completed" });
@@ -111,7 +111,9 @@ describe("voice tool result latency", () => {
     try {
       h.call("bad", "open_workspace", { view: "unknown" });
       h.receive({ type: "reply.done", status: "completed" });
-      await vi.waitFor(() => expect(h.sent()).toContainEqual(expect.objectContaining({ call_id: "bad", is_error: true })));
+      await vi.waitFor(() => expect(h.sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "bad" })));
+      const result = JSON.parse(String(h.sent().find(m => m.call_id === "bad")?.result));
+      expect(result).toMatchObject({ error: expect.any(String) });
       expect(h.navigate).not.toHaveBeenCalled();
     } finally { await h.adapter.disconnect(); }
   });
@@ -128,8 +130,8 @@ describe("voice tool result latency", () => {
       await vi.waitFor(() => expect(h.sent().filter(m => m.type === "tool.result").map(m => m.call_id)).toEqual(["read-one", "read-two"]));
       h.finishResearch();
       await new Promise(resolve => setTimeout(resolve, 0));
-      expect(h.sent().some(m => m.call_id === "slow")).toBe(false);
-      h.receive({ type: "reply.done", status: "completed" });
+      // No reply.started has arrived: the server may be waiting for every
+      // parallel result before it starts the continuation.
       await vi.waitFor(() => expect(h.sent()).toContainEqual(expect.objectContaining({ call_id: "slow" })));
     } finally { await h.adapter.disconnect(); }
   });

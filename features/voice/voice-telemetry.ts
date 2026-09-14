@@ -10,6 +10,8 @@ export type VoiceTelemetryKind =
   | "interruption_candidate"
   | "interruption_confirmed"
   | "tool_started"
+  | "tool_completed"
+  | "tool_result_sent"
   | "session_ended"
   | "session_error";
 
@@ -19,6 +21,9 @@ export interface AssemblyTelemetryEvent {
   text?: unknown;
   delta?: unknown;
   name?: unknown;
+  call_id?: unknown;
+  session_id?: unknown;
+  message?: unknown;
 }
 
 export interface VoiceTelemetryEntry {
@@ -60,7 +65,7 @@ function eventEntry(event: AssemblyTelemetryEvent, receivedAt: number): Omit<Voi
   const transcriptDetail = shortText(event.delta) ?? shortText(event.text);
   switch (event.type) {
     case "session.ready":
-      return { kind: "session_ready", label: "Session ready", receivedAt };
+      return { kind: "session_ready", label: "Session ready", detail: shortText(event.session_id), receivedAt };
     case "input.speech.started":
       return { kind: "speech_started", label: "Speech started", receivedAt };
     case "input.speech.stopped":
@@ -90,11 +95,15 @@ function eventEntry(event: AssemblyTelemetryEvent, receivedAt: number): Omit<Voi
         detail: typeof event.name === "string" ? event.name.replaceAll("_", " ") : undefined,
         receivedAt,
       };
+    case "talkos.tool.completed":
+      return { kind: "tool_completed", label: event.status === "failed" ? "Tool returned an error" : "Tool completed locally", detail: shortText(event.call_id), receivedAt };
+    case "talkos.tool.result.sent":
+      return { kind: "tool_result_sent", label: "Tool result delivered", detail: shortText(event.call_id), receivedAt };
     case "session.ended":
       return { kind: "session_ended", label: "Session ended", receivedAt };
     case "session.error":
     case "error":
-      return { kind: "session_error", label: "Session error", detail: shortText(event.text), receivedAt };
+      return { kind: "session_error", label: "Session error", detail: shortText(event.message) ?? shortText(event.text), receivedAt };
     default:
       return null;
   }

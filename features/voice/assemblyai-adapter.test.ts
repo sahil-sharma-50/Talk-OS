@@ -5,7 +5,10 @@ import { createWorkspace } from "@/features/workspace/workspace-model";
 import { sessionReducer } from "@/features/session/session.reducer";
 import { initialSessionState } from "@/features/session/session.fixtures";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("AssemblyAI session setup", () => {
   it("sends only AssemblyAI credentials to the voice-token route", async () => {
@@ -19,15 +22,31 @@ describe("AssemblyAI session setup", () => {
       return Response.json({ token: "test-token" });
     });
     vi.stubGlobal("fetch", fetchRequest);
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      locale: "en-US", calendar: "gregory", numberingSystem: "latn", timeZone: "Europe/Berlin",
+    });
 
     const adapter = createAssemblyAIAdapter({ apiKey: "assembly-secret", agentId: "agent-123", tavilyApiKey: "tavily-secret" });
     await adapter.connect(vi.fn());
     try {
       expect(fetchRequest.mock.calls[0][0]).toBe("/api/voice-token");
-      expect(JSON.parse(String(fetchRequest.mock.calls[0][1]?.body))).toEqual({ apiKey: "assembly-secret", agentId: "agent-123" });
+      expect(JSON.parse(String(fetchRequest.mock.calls[0][1]?.body))).toEqual({ apiKey: "assembly-secret", agentId: "agent-123", region: "eu" });
     } finally {
       await adapter.disconnect();
     }
+  });
+
+  it("opens the WebSocket in the region that minted the temporary token", async () => {
+    const opened = vi.fn();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; addEventListener() {} close = vi.fn(); constructor(url: string) { opened(url); } });
+    vi.stubGlobal("AudioContext", class { state = "running"; resume = vi.fn(); close = vi.fn(); });
+    vi.stubGlobal("fetch", async () => Response.json({ token: "eu-token", region: "eu" }));
+    const adapter = createAssemblyAIAdapter();
+
+    await adapter.connect(vi.fn());
+
+    expect(String(opened.mock.calls[0][0])).toBe("wss://agents.eu.assemblyai.com/v1/ws?token=eu-token");
+    await adapter.disconnect();
   });
 
   it("retains a segmented Planner request across tool replies and recovers from a wrong creation tool", async () => {
@@ -62,7 +81,7 @@ describe("AssemblyAI session setup", () => {
       expect(sent().filter(message => message.type === "session.update").at(-1).session.system_prompt).toContain('"latest_user_request":"Open my planner and create a shopping list.","requested_workspace":"planner"');
       receive({ type: "tool.call", call_id: "wrong", name: "create_sheet", arguments: { title: "Shopping list" } });
       receive({ type: "reply.done", status: "completed" });
-      await vi.waitFor(() => expect(sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "wrong", is_error: true })));
+      await vi.waitFor(() => expect(sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "wrong" })));
       expect(workspace.sheets).toHaveLength(0);
       const wrongResult = JSON.parse(sent().find(message => message.call_id === "wrong").result);
       expect(wrongResult).toMatchObject({ error: "workspace_target_mismatch", requested_workspace: "planner" });
@@ -71,7 +90,8 @@ describe("AssemblyAI session setup", () => {
       await vi.waitFor(() => expect(workspace.planners).toHaveLength(1));
       expect(activeView).toHaveBeenLastCalledWith("planner");
       expect(workspace.planners[0].tasks.map(task => task.title)).toEqual(["Milk", "Apples"]);
-      receive({ type: "transcript.agent.delta", reply_id: "spoken", delta: "Your list is ready." });
+      receive({ type: "reply.started", reply_id: "spoken" });
+      receive({ type: "transcript.agent", reply_id: "spoken", text: "Your list is ready." });
       receive({ type: "input.speech.started" });
       receive({ type: "transcript.user", item_id: "new-request", text: "Actually use Sheets and make a budget." });
       receive({ type: "transcript.user", item_id: "phrase-one", text: "Open my planner" });
@@ -232,12 +252,39 @@ describe("AssemblyAI session setup", () => {
     const receive = (message: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
     receive({ type: "session.ready" }); receive({ type: "reply.done", status: "completed" });
     socket.send.mockClear();
+    receive({ type: "reply.started", reply_id: "next" });
     receive({ type: "tool.call", call_id: "next-read", name: "search_web", arguments: { query: "product news" } });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(socket.send).not.toHaveBeenCalled();
     receive({ type: "reply.done", status: "completed" });
     expect(socket.send.mock.calls.map(([value]) => JSON.parse(value))).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "next-read" }));
     await adapter.disconnect();
+  });
+
+  it("sends tool results using the exact AssemblyAI protocol envelope", async () => {
+    class TestSocket extends EventTarget { static OPEN = 1; readyState = 1; send = vi.fn(); close = vi.fn(); }
+    const socket = new TestSocket();
+    vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
+    vi.stubGlobal("AudioContext", class { state = "running"; resume = vi.fn(); close = vi.fn(); });
+    vi.stubGlobal("fetch", async () => Response.json({ token: "test-token" }));
+    const adapter = createAssemblyAIAdapter();
+    await adapter.connect(vi.fn());
+    const receive = (message: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
+    try {
+      receive({ type: "session.ready" });
+      receive({ type: "tool.call", call_id: "workspace", name: "get_workspace", arguments: {} });
+      receive({ type: "reply.done", status: "completed" });
+      await vi.waitFor(() => expect(socket.send.mock.calls.some(([value]) => JSON.parse(value).type === "tool.result")).toBe(true));
+      const result = socket.send.mock.calls.map(([value]) => JSON.parse(value)).find(message => message.type === "tool.result");
+      expect(result).toEqual({
+        type: "tool.result",
+        call_id: "workspace",
+        result: expect.any(String),
+        is_error: false,
+      });
+    } finally {
+      await adapter.disconnect();
+    }
   });
 
   it("queues a typed message until the stored-agent session is ready", async () => {
@@ -300,9 +347,10 @@ describe("AssemblyAI session setup", () => {
 });
 
 describe("normalizeVoiceEvent", () => {
-  it("uses fast turn-taking with no added interruption delay", () => {
-    expect(VOICE_INPUT_CONFIG).toMatchObject({ transcription_mode: "min_latency", turn_detection: { interrupt_response: true, interruption_delay: 0 } });
+  it("keeps adaptive endpointing patient without adding barge-in delay", () => {
+    expect(VOICE_INPUT_CONFIG).toMatchObject({ transcription_mode: "balanced", continuous_partials: true, turn_detection: { interrupt_response: true, interruption_delay: 0 } });
     expect(VOICE_INPUT_CONFIG.turn_detection).not.toHaveProperty("min_silence");
+    expect(VOICE_INPUT_CONFIG.turn_detection).not.toHaveProperty("max_silence");
   });
   it("maps a final user transcript to a finalized TalkOS turn", () => {
     expect(

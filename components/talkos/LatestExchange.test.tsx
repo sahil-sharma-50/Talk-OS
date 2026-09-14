@@ -34,6 +34,49 @@ it("immediately shows an interruption instead of stale playback captions", () =>
   expect(screen.queryByLabelText("TalkOS")).toBeNull();
 });
 
+it("keeps the growing user transcript visible when it starts overflowing", () => {
+  const partial = { speaker: "user" as const, text: "Research an Android app", turnId: "request-one" };
+  const view = render(<LatestExchange turns={[]} partialTranscript={partial} voiceState="listening" />);
+  const request = screen.getByLabelText("You");
+  Object.defineProperties(request, { scrollHeight: { value: 320 }, clientHeight: { value: 120 }, scrollTop: { value: 0, writable: true } });
+  request.scrollTo = vi.fn();
+  view.rerender(<LatestExchange turns={[]} partialTranscript={{ ...partial, text: `${partial.text}, create a PRD, then make a €5,000 budget sheet.` }} voiceState="listening" />);
+  expect(request.scrollTo).toHaveBeenCalledWith({ top: 320, behavior: "instant" });
+});
+
+it("preserves a manually scrolled user transcript and resumes on request", () => {
+  const partial = { speaker: "user" as const, text: "Research the audience and competitors.", turnId: "request-one" };
+  const view = render(<LatestExchange turns={[]} partialTranscript={partial} voiceState="listening" />);
+  const request = screen.getByLabelText("You");
+  Object.defineProperties(request, { scrollHeight: { value: 600 }, clientHeight: { value: 120 }, scrollTop: { value: 480, writable: true } });
+  const scroll = vi.fn(); request.scrollTo = scroll;
+  fireEvent.keyDown(request, { key: "PageUp" });
+  request.scrollTop = 160;
+  scroll.mockClear();
+  const text = `${partial.text} Add the research to a PRD.`;
+  view.rerender(<LatestExchange turns={[{ id: "request-one", speaker: "user", text, at: "" }]} partialTranscript={null} voiceState="thinking" />);
+  expect(screen.getByLabelText("You")).toBe(request);
+  expect(scroll).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Follow transcript" }));
+  expect(scroll).toHaveBeenCalledWith({ top: 600, behavior: "instant" });
+});
+
+it("resumes transcript following when the reader scrolls back to the bottom", () => {
+  const partial = { speaker: "user" as const, text: "A long request", turnId: "request-one" };
+  const view = render(<LatestExchange turns={[]} partialTranscript={partial} />);
+  const request = screen.getByLabelText("You");
+  Object.defineProperties(request, { scrollHeight: { value: 600, writable: true }, clientHeight: { value: 120 }, scrollTop: { value: 200, writable: true } });
+  const scroll = vi.fn(); request.scrollTo = scroll;
+  fireEvent.wheel(request, { deltaY: -100 });
+  request.scrollTop = 480;
+  fireEvent.scroll(request);
+  expect(screen.queryByRole("button", { name: "Follow transcript" })).toBeNull();
+  Object.defineProperty(request, "scrollHeight", { value: 640 });
+  scroll.mockClear();
+  view.rerender(<LatestExchange turns={[]} partialTranscript={{ ...partial, text: `${partial.text} continues.` }} />);
+  expect(scroll).toHaveBeenCalledWith({ top: 640, behavior: "instant" });
+});
+
 it("shows consecutive saved user phrases as one request", () => {
   render(<LatestExchange partialTranscript={null} turns={[
     { id: "one", speaker: "user", text: "Open my planner", at: "" },

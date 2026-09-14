@@ -22,9 +22,12 @@ import { executeWorkspaceControl } from "./workspace-control";
 import { TimedReplyCaptions } from "./playback-captions";
 
 export const VOICE_INPUT_CONFIG = {
-  transcription_mode: "min_latency",
+  // The least-patient preset cuts off multi-clause requests at natural pauses.
+  // Keep semantic/adaptive endpointing; barge-in remains immediate independently.
+  transcription_mode: "balanced",
+  continuous_partials: true,
   turn_detection: { interrupt_response: true, interruption_delay: 0 },
-  transcription_prompt: "This is TalkOS, a productivity workspace. The user may refer to the Documents, Sheets, Planner, Research, Canvas, Dashboard and Settings tabs. Planner contains shopping lists, checklists and tasks. Preserve the workspace names the user says and the complete request across natural pauses.",
+  transcription_prompt: "A conversation about TalkOS, a productivity workspace with Documents, Sheets, Planner, Research, Canvas, Dashboard and Settings tabs. Topics include market research, PRDs, budgets, shopping lists, checklists and tasks.",
 };
 
 type AssemblyAIEvent = Record<string, unknown> & { type?: string };
@@ -32,6 +35,11 @@ type AssemblyAIEvent = Record<string, unknown> & { type?: string };
 const at = () => new Date().toISOString();
 // Ignore low-level lead-in noise in UI state and latency; playback is untouched.
 const AUDIBLE_SAMPLE_THRESHOLD = 0.008;
+// Four 20 ms frames pause output speculatively. Only a server speech signal
+// confirms interruption; unconfirmed noise must not cancel workspace work.
+const LOCAL_BARGE_IN_LEVEL = 0.12;
+const LOCAL_BARGE_IN_FRAMES = 4;
+const REPLY_PROGRESS_TIMEOUT_MS = 45_000;
 
 export function normalizeVoiceEvent(message: AssemblyAIEvent): SessionEvent | null {
   const text = typeof message.text === "string" ? message.text : "";
@@ -128,11 +136,12 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     setWorkspace: (workspace) => { fallbackWorkspace = workspace; },
     getTavilyApiKey: () => credentials?.tavilyApiKey ?? "",
   };
-  const requestRuntime: WorkspaceRuntime = { ...runtime, getCurrentRequest: () => spokenRequest.text };
+  const requestRuntime: WorkspaceRuntime = { ...runtime, getCurrentRequest: () => spokenRequest.text, getCurrentRequestId: () => spokenRequest.id };
   let socket: WebSocket | null = null;
   let sessionReady = false;
   let greetingPending = false;
   let audioContext: AudioContext | null = null;
+  let microphoneContext: AudioContext | null = null;
   let stream: MediaStream | null = null;
   let worklet: AudioWorkletNode | null = null;
   let source: MediaStreamAudioSourceNode | null = null;
@@ -179,6 +188,12 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
   let currentReplyId = "";
   let incomingReplyId = "";
   let captionTimer: ReturnType<typeof setInterval> | undefined;
+  let replyProgressTimer: ReturnType<typeof setTimeout> | undefined;
+  let localSpeechFrames = 0;
+  let localPausePending = false;
+  let localPauseTimer: ReturnType<typeof setTimeout> | undefined;
+  let localSpeechLatched = false;
+  let localQuietFrames = 0;
   let lastCaption: SpeechCaption | null = null;
 
   const retireReply = (id: string) => {
@@ -231,11 +246,12 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     return timestamp && timestamp > 0 ? timestamp : audioContext?.currentTime ?? 0;
   };
   const syncSpeaking = () => {
-    if (!audioContext) return;
+    if (!audioContext || localPausePending) return;
     const now = playbackClock();
     const speaking = audioContext.state === "running" && [...audibleWindows.values()].some(window => now >= window.start && now < window.end);
     if (speaking === outputSpeaking) return;
     outputSpeaking = speaking;
+    if (speaking && !userSpeaking && !redirectPending) spokenRequest.responseStarted();
     emit({ type: "VOICE_STATE_CHANGED", voiceState: speaking ? "speaking" : userSpeaking ? "listening" : activeCalls.size ? "acting" : replyActive ? "thinking" : "listening", at: at() });
     if (!speaking) levelListener(0);
   };
@@ -254,12 +270,13 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     emit({ type: "SPEECH_CAPTION_UPDATED", caption, at: at() });
   };
   const tickCaptions = () => {
-    if (!audioContext) return;
+    if (!audioContext || localPausePending) return;
     const now = playbackClock();
     syncSpeaking();
     for (const [id, window] of audibleWindows) if (now >= window.end) audibleWindows.delete(id);
     for (const [id, reply] of captionReplies) if (reply.finished(now)) captionReplies.delete(id);
-    publishCaption(captionReplies.values().next().value?.sample(now) ?? null);
+    const reply = captionReplies.values().next().value;
+    publishCaption(reply ? reply.sample(now) ?? { turnId: reply.turnId, text: "", activeStart: 0, activeEnd: 0 } : null);
     if (!captionReplies.size) { clearInterval(captionTimer); captionTimer = undefined; }
   };
   const replyCaptions = (message: AssemblyAIEvent) => {
@@ -278,18 +295,28 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
   };
 
   const flushResults = () => {
-    if (!pendingResults.length || socket?.readyState !== WebSocket.OPEN || !replyDone || userSpeaking || redirectPending) return;
+    if (!pendingResults.length || socket?.readyState !== WebSocket.OPEN) return;
+    if (!replyDone || userSpeaking || redirectPending) {
+      if (!userSpeaking && !redirectPending) armReplyProgressTimer(currentReplyId);
+      return;
+    }
     const ready = pendingResults;
     pendingResults = [];
-    if (ready.length) replyDone = false;
+    // Sending one result does not start a reply. Parallel tools may settle at
+    // different times, and the service can wait for all of them. Only an
+    // incoming reply/speech start closes this delivery boundary.
     // Results generate another reply. Release them only at an uninterrupted
     // turn boundary; obsolete/cancelled continuations have no playback permit.
     ready.forEach(({ callId, execution, inputVersion: version }) => {
-      expectToolReply(callId, version, execution.result.status === "interrupted");
+      // A duplicate navigation acknowledgment is already owned by the local
+      // confirmation. It must not reserve a reply slot for the next request.
+      if (execution.result !== navigationConfirmation?.result) expectToolReply(callId, version, execution.result.status === "interrupted");
       socket?.send(JSON.stringify({
-        type: "tool.result", call_id: callId, result: JSON.stringify(execution.result), is_error: execution.isError ?? false,
+        type: "tool.result", call_id: callId, result: JSON.stringify(execution.result), is_error: Boolean(execution.isError),
       }));
+      trackTelemetry({ type: "talkos.tool.result.sent", call_id: callId });
     });
+    if (pendingToolReplies.length) armReplyProgressTimer(currentReplyId);
   };
 
   const sendText = (content: string) => {
@@ -320,6 +347,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       }
     }
     const context = {
+      current_time: new Date().toISOString(),
       latest_user_request: content, requested_workspace: explicitWorkspaceTarget(content),
       recent_conversation: runtime.getWorkspace().conversation.slice(-8).map(({ speaker, text }) => ({ role: speaker, text })),
       ...(completedClientAction ? { completed_client_action: completedClientAction } : {}),
@@ -366,11 +394,80 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     if (audioContext) playbackTime = audioContext.currentTime;
   };
 
+  const clearReplyProgressTimer = () => {
+    clearTimeout(replyProgressTimer);
+    replyProgressTimer = undefined;
+  };
+  const armReplyProgressTimer = (replyId: string) => {
+    clearReplyProgressTimer();
+    replyProgressTimer = setTimeout(() => {
+      replyProgressTimer = undefined;
+      if (replyId !== currentReplyId || !(replyActive || pendingToolReplies.length || pendingResults.length) || userSpeaking) return;
+      if (activeCalls.size || playbackSources.length || localPausePending) { armReplyProgressTimer(replyId); return; }
+      void cleanup();
+      emit({ type: "SESSION_ERROR", message: "The voice agent stopped responding. Your saved workspace is still available. Tap the orb to reconnect, then ask it to continue from the saved research or document.", at: at() });
+    }, REPLY_PROGRESS_TIMEOUT_MS);
+  };
+
+  const resumeLocalPause = () => {
+    clearTimeout(localPauseTimer);
+    localPauseTimer = undefined;
+    if (!localPausePending) return;
+    localPausePending = false;
+    const context = audioContext;
+    void context?.resume().then(() => {
+      if (audioContext !== context) return;
+      outputSpeaking = false;
+      tickCaptions();
+    }).catch(() => {});
+  };
+  const pauseForLocalSpeech = () => {
+    if (!audioContext || localPausePending) return;
+    localPausePending = true;
+    localSpeechLatched = true;
+    localSpeechFrames = 0;
+    // The microphone has a separate clock, so it continues feeding the
+    // provider while output and captions pause at their exact position.
+    void audioContext.suspend().catch(resumeLocalPause);
+    emit({ type: "VOICE_STATE_CHANGED", voiceState: "listening", at: at() });
+    localPauseTimer = setTimeout(resumeLocalPause, 800);
+  };
+
+  const beginInterruption = () => {
+    const firstSignal = !userSpeaking;
+    userSpeaking = true;
+    localSpeechFrames = 0;
+    if (firstSignal) {
+      responsePermit += 1;
+      replyDone = false;
+    }
+    if (redirectPending) return;
+    const interruptedActionId = [...activeActionIds].at(-1) ?? pendingResults.at(-1)?.callId;
+    const interruptsActiveWork = replyActive || Boolean(interruptedActionId) || playbackSources.length > 0;
+    if (!interruptsActiveWork) return;
+    clearReplyProgressTimer();
+    stopPlayback(replyActive && unspokenReplyIds.has(currentReplyId) ? currentReplyId : undefined);
+    resumeLocalPause();
+    if (navigationConfirmation) navigationConfirmation.replyId = null;
+    redirectedActionId = interruptedActionId;
+    redirectPending = true;
+    trackTelemetry({ type: "talkos.interruption.candidate" });
+    emit({ type: "INTERRUPTION_STARTED", actionId: interruptedActionId, at: at() });
+    generation += 1;
+    activeActionIds.forEach(cancelTool);
+    activeCalls.forEach((controller) => controller.abort());
+    activeCalls.clear();
+    activeActionIds.clear();
+  };
+
   const cleanup = async () => {
     connectionGeneration += 1;
     generation += 1;
     tokenController?.abort();
     clearTimeout(readyTimeout);
+    clearReplyProgressTimer();
+    clearTimeout(localPauseTimer);
+    localPausePending = false;
     activeCalls.forEach((controller) => controller.abort());
     activeCalls.clear();
     sessionReady = false;
@@ -388,6 +485,8 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     oldSocket?.close();
     const oldAudioContext = audioContext;
     audioContext = null;
+    const oldMicrophoneContext = microphoneContext;
+    microphoneContext = null;
     pendingResults = [];
     pendingToolReplies.length = 0;
     toolReplyVersions.clear();
@@ -410,8 +509,12 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     unspokenReplyIds.clear();
     currentReplyId = "";
     incomingReplyId = "";
+    localSpeechFrames = 0;
+    localSpeechLatched = false;
+    localQuietFrames = 0;
     spokenRequest = new SpokenRequest();
     if (oldAudioContext && oldAudioContext.state !== "closed") await oldAudioContext.close();
+    if (oldMicrophoneContext && oldMicrophoneContext.state !== "closed") await oldMicrophoneContext.close();
   };
 
   return {
@@ -420,23 +523,26 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       tokenController = new AbortController();
       emit = nextEmit;
       emit({ type: "VOICE_STATE_CHANGED", voiceState: "connecting", at: at() });
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const region = timeZone.startsWith("Europe/") ? "eu" : "us";
       const response = await fetch("/api/voice-token", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: credentials ? JSON.stringify({ apiKey: credentials.apiKey, agentId: credentials.agentId }) : undefined,
+        body: JSON.stringify({ ...(credentials ? { apiKey: credentials.apiKey, agentId: credentials.agentId } : {}), region }),
         signal: tokenController.signal,
       });
       if (thisConnection !== connectionGeneration) return;
       if (response.status === 503) throw new VoiceNotConfiguredError();
       if (!response.ok) throw new Error("The AssemblyAI session could not be started.");
-      const sessionCredentials = (await response.json()) as { token: string };
+      const sessionCredentials = (await response.json()) as { token: string; region?: "us" | "eu" };
       if (thisConnection !== connectionGeneration) return;
 
-      audioContext = new AudioContext();
+      audioContext = new AudioContext({ latencyHint: "interactive" });
       await audioContext.resume();
       if (thisConnection !== connectionGeneration) return;
 
-      const url = new URL("wss://agents.assemblyai.com/v1/ws");
+      const voiceHost = sessionCredentials.region === "eu" ? "agents.eu.assemblyai.com" : "agents.assemblyai.com";
+      const url = new URL(`wss://${voiceHost}/v1/ws`);
       url.searchParams.set("token", sessionCredentials.token);
       socket = new WebSocket(url);
       readyTimeout = setTimeout(() => {
@@ -475,7 +581,10 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           // Tool results auto-start replies. Some deployments expose fc-call_id;
           // others use opaque resp_ ids and preserve the result/reply order.
           const matchingCall = pendingToolReplies.findIndex(reply => messageReplyId === `fc-${reply.callId}`);
-          const [owner] = pendingToolReplies.splice(matchingCall >= 0 ? matchingCall : 0, 1);
+          // Opaque reply ids can acknowledge an entire parallel tool batch.
+          // Leaving one FIFO slot per result would mislabel the next user turn.
+          const owners = matchingCall >= 0 ? pendingToolReplies.splice(matchingCall, 1) : pendingToolReplies.splice(0);
+          const owner = owners.reduce((chosen, candidate) => candidate.inputVersion > chosen.inputVersion || candidate.inputVersion === chosen.inputVersion && (!candidate.cancelled || chosen.cancelled) ? candidate : chosen);
           toolReplyVersions.set(messageReplyId, owner.inputVersion);
           replyPermits.set(messageReplyId, owner.permit);
           if (owner.cancelled || owner.inputVersion < inputVersion) retireReply(messageReplyId);
@@ -490,19 +599,34 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           while (finishedReplyIds.size > 100) finishedReplyIds.delete(finishedReplyIds.values().next().value!);
         }
         if (replyEvent && navigationConfirmation?.replyId && messageReplyId && navigationConfirmation.replyId !== messageReplyId) retireReply(messageReplyId);
-        if (replyEvent && retiredReplyIds.has(messageReplyId)) {
-          // A discarded reply still carries a protocol boundary. Settle queued
-          // tool calls there without letting old completions stop newer audio.
-          if (message.type === "reply.done" && messageReplyId === incomingReplyId) {
-            replyDone = true;
-            if (message.status === "interrupted") pendingResults = [];
-            else flushResults();
+        if (message.type === "reply.done") {
+          const ownsCurrentReply = !currentReplyId || messageReplyId === currentReplyId;
+          const ownsBoundary = !incomingReplyId || messageReplyId === incomingReplyId;
+          unspokenReplyIds.delete(messageReplyId);
+          captionReplies.get(messageReplyId)?.finish();
+          tickCaptions();
+          if (ownsBoundary) replyDone = true;
+          if (ownsCurrentReply) {
+            replyActive = false;
+            clearReplyProgressTimer();
           }
+          // A retired newest reply still carries a boundary. An older or
+          // duplicate completion cannot reopen delivery during a newer reply.
+          if (message.status === "interrupted") {
+            if (ownsBoundary) pendingResults = [];
+            if (ownsCurrentReply) stopPlayback();
+          } else if (ownsBoundary) {
+            flushResults();
+          }
+          if (greetingPending && ownsBoundary) { greetingPending = false; flushText(); }
+        }
+        if (replyEvent && retiredReplyIds.has(messageReplyId)) {
+          // Old content cannot own playback or UI state. Its completion was
+          // still handled above because tool continuations depend on it.
           return;
         }
         if (message.type === "reply.done" && messageReplyId && currentReplyId && messageReplyId !== currentReplyId) {
-          unspokenReplyIds.delete(messageReplyId);
-          captionReplies.get(messageReplyId)?.finish(); tickCaptions(); return;
+          return;
         }
         const resumingUnspokenReply = unspokenReplyIds.has(messageReplyId) && (message.type === "reply.audio" || message.type?.startsWith("transcript.agent"));
         if ((message.type === "reply.started" || resumingUnspokenReply) && redirectPending && !userSpeaking) {
@@ -550,11 +674,12 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           playback.start(playbackTime);
           playbackTime += buffer.duration;
           playbackSources.push(playback);
+          if (messageReplyId === currentReplyId && replyActive) armReplyProgressTimer(messageReplyId);
           playback.onended = () => {
             playbackSources = playbackSources.filter((item) => item !== playback);
             if (!playbackSources.length) {
               levelListener(0);
-              if (!replyActive && !redirectPending && !activeCalls.size) emit({ type: "VOICE_STATE_CHANGED", voiceState: "listening", at: at() });
+              if (!replyActive && !redirectPending) emit({ type: "VOICE_STATE_CHANGED", voiceState: activeCalls.size || pendingResults.length ? "acting" : pendingToolReplies.length ? "thinking" : "listening", at: at() });
             }
             tickCaptions();
           };
@@ -568,6 +693,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
           unspokenReplyIds.add(currentReplyId);
           replyDone = false;
           replyActive = true;
+          armReplyProgressTimer(currentReplyId);
         }
         if (message.type === "transcript.agent.delta" && typeof message.delta === "string") {
           if (message.delta.trim() && !acceptSpokenReply(messageReplyId)) return;
@@ -578,31 +704,34 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
         if (message.type === "transcript.agent" && typeof message.text === "string" && message.text.trim()) {
           if (!acceptSpokenReply(messageReplyId)) return;
           unspokenReplyIds.delete(messageReplyId); chooseNavigationReply(messageReplyId);
-        }
-        if (message.type === "input.speech.stopped" || message.type === "transcript.user") userSpeaking = false;
-        if (message.type === "input.speech.started") {
-          userSpeaking = true;
-          responsePermit += 1;
-          replyDone = false;
-          const interruptedActionId = [...activeActionIds].at(-1) ?? pendingResults.at(-1)?.callId;
-          const interruptsActiveWork = replyActive || Boolean(interruptedActionId) || playbackSources.length > 0;
-          stopPlayback(replyActive && unspokenReplyIds.has(currentReplyId) ? currentReplyId : undefined);
-          if (interruptsActiveWork) {
-            if (navigationConfirmation) navigationConfirmation.replyId = null;
-            redirectedActionId = interruptedActionId;
-            redirectPending = true;
-            trackTelemetry({ type: "talkos.interruption.candidate" });
-            emit({ type: "INTERRUPTION_STARTED", actionId: interruptedActionId, at: at() });
-            generation += 1;
-            activeActionIds.forEach(cancelTool);
-            activeCalls.forEach((controller) => controller.abort());
-            activeCalls.clear();
-            activeActionIds.clear();
+          const captions = captionReplies.get(messageReplyId);
+          captions?.setText(message.text);
+          // The final transcript follows all reply.audio frames. It is enough
+          // to close the caption timeline if reply.done is delayed or lost.
+          captions?.finish();
+          tickCaptions();
+          if (messageReplyId === currentReplyId) {
+            replyActive = false;
+            clearReplyProgressTimer();
+            if (activeCalls.size || pendingResults.length || pendingToolReplies.length) armReplyProgressTimer(currentReplyId);
+            if (!playbackSources.length && !userSpeaking) {
+              emit({ type: "VOICE_STATE_CHANGED", voiceState: activeCalls.size || pendingResults.length ? "acting" : pendingToolReplies.length ? "thinking" : "listening", at: at() });
+            }
           }
+        }
+        if (message.type === "input.speech.stopped" || message.type === "transcript.user") {
+          userSpeaking = false;
+          localSpeechFrames = 0;
+          localSpeechLatched = false;
+        }
+        if (message.type === "input.speech.started") {
+          beginInterruption();
         }
         // Tool replies can stream seconds of silence before any spoken answer.
         // Those buffers must not split the user's next phrase into a new task.
-        if ((message.type === "transcript.agent.delta" || message.type === "transcript.agent") && message.interrupted !== true && !redirectPending) spokenRequest.responseStarted();
+        // Network words often arrive before speech. Only audible playback (or
+        // a completed text-only reply) ends the user's continued request.
+        if (message.type === "transcript.agent" && message.interrupted !== true && !redirectPending && !userSpeaking && messageReplyId === currentReplyId && !captionReplies.has(messageReplyId)) spokenRequest.responseStarted();
         let userTranscript: SessionEvent | null = null;
         const isUserTranscript = message.type === "transcript.user" || message.type === "transcript.user.delta";
         if (isUserTranscript && typeof message.text === "string") {
@@ -632,7 +761,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
         ) {
           const call = message as AssemblyAIEvent & ResearchToolCall;
           if (handledCallIds.has(call.call_id)) return;
-          replyDone = false;
+          clearReplyProgressTimer();
           handledCallIds.add(call.call_id);
           if (userSpeaking || redirectPending) { cancelTool(call.call_id); return; }
           if (navigationConfirmation && call.name === "open_workspace" && call.arguments.view === navigationConfirmation.view) {
@@ -651,6 +780,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
             activeCalls.delete(controller);
             activeActionIds.delete(call.call_id);
             if (controller.signal.aborted || callGeneration !== generation) return;
+            trackTelemetry({ type: "talkos.tool.completed", call_id: call.call_id, name: call.name, status: execution.isError ? "failed" : "completed" });
             spokenRequest.actionResponded();
             execution.events.forEach((normalizedEvent) => emit(normalizedEvent));
             pendingResults.push({ callId: call.call_id, execution, inputVersion: callInputVersion });
@@ -666,25 +796,15 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
             flushResults();
           });
         }
-        if (message.type === "reply.done" && socket?.readyState === WebSocket.OPEN) {
-          unspokenReplyIds.delete(messageReplyId);
-          captionReplies.get(messageReplyId)?.finish();
-          tickCaptions();
-          replyDone = true;
-          replyActive = false;
-          if (message.status === "interrupted") {
-            pendingResults = [];
-            stopPlayback();
-          } else {
-            flushResults();
-          }
-          if (greetingPending) { greetingPending = false; flushText(); }
+        let normalized = isUserTranscript ? userTranscript : normalizeVoiceEvent(message);
+        if (message.type === "reply.done" && message.status !== "interrupted" && !outputSpeaking) {
+          normalized = { type: "VOICE_STATE_CHANGED", voiceState: activeCalls.size || pendingResults.length ? "acting" : pendingToolReplies.length ? "thinking" : "listening", at: at() };
         }
-        const normalized = isUserTranscript ? userTranscript : normalizeVoiceEvent(message);
         // reply.done describes the network stream; buffered audio can still be
         // audible. Its onended callback returns the UI to listening.
         const audioStillSpeaking = (message.type === "reply.done" && message.status !== "interrupted" && playbackSources.length > 0) || (message.type === "reply.started" && outputSpeaking);
         if (normalized && !audioStillSpeaking) emit(normalized);
+        if (normalized?.type === "ACTION_STARTED" && outputSpeaking) emit({ type: "VOICE_STATE_CHANGED", voiceState: "speaking", at: at() });
         if (["session.error", "error", "session.ended"].includes(message.type ?? "")) void cleanup();
       });
       socket.addEventListener("close", () => {
@@ -703,16 +823,32 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       const thisConnection = connectionGeneration;
       await audioContext?.resume();
       if (!audioContext || worklet) return;
-      await audioContext.audioWorklet.addModule("/pcm-processor.js");
+      microphoneContext ??= new AudioContext({ latencyHint: "interactive" });
+      const inputContext = microphoneContext;
+      await inputContext.resume();
+      await inputContext.audioWorklet.addModule("/pcm-processor.js");
       const acquiredStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false } });
       if (thisConnection !== connectionGeneration || !audioContext) { acquiredStream.getTracks().forEach((track) => track.stop()); return; }
       stream = acquiredStream;
-      source = audioContext.createMediaStreamSource(stream);
-      const audioWorklet = new AudioWorkletNode(audioContext, "talkos-pcm-processor", {
-        processorOptions: { inputSampleRate: audioContext.sampleRate, targetSampleRate: 24000 },
+      source = inputContext.createMediaStreamSource(stream);
+      const audioWorklet = new AudioWorkletNode(inputContext, "talkos-pcm-processor", {
+        processorOptions: { inputSampleRate: inputContext.sampleRate, targetSampleRate: 24000 },
       });
       audioWorklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-        if (!playbackSources.length) publishLevel(pcmLevel(event.data));
+        const inputLevel = pcmLevel(event.data);
+        if (localPausePending && inputLevel >= LOCAL_BARGE_IN_LEVEL) {
+          clearTimeout(localPauseTimer);
+          localPauseTimer = setTimeout(resumeLocalPause, 800);
+        }
+        localQuietFrames = inputLevel < LOCAL_BARGE_IN_LEVEL / 2 ? localQuietFrames + 1 : 0;
+        if (localQuietFrames >= 15) localSpeechLatched = false;
+        if (outputSpeaking && !userSpeaking && !redirectPending && !localPausePending && !localSpeechLatched) {
+          localSpeechFrames = inputLevel >= LOCAL_BARGE_IN_LEVEL ? localSpeechFrames + 1 : Math.max(0, localSpeechFrames - 1);
+          if (localSpeechFrames >= LOCAL_BARGE_IN_FRAMES) pauseForLocalSpeech();
+        } else {
+          localSpeechFrames = 0;
+        }
+        if (!playbackSources.length) publishLevel(inputLevel);
         if (sessionReady && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "input.audio", audio: encodeBase64(event.data) }));
       };
       worklet = audioWorklet;
@@ -726,6 +862,8 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
       worklet = null;
       source = null;
       stream = null;
+      localSpeechFrames = 0;
+      resumeLocalPause();
       levelListener(0);
     },
 
@@ -737,6 +875,7 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
 
     setMuted(muted) {
       stream?.getAudioTracks().forEach((track) => { track.enabled = !muted; });
+      if (muted) { localSpeechFrames = 0; resumeLocalPause(); }
     },
 
     setLevelListener(listener) {
@@ -749,9 +888,6 @@ export function createAssemblyAIAdapter(credentials?: VoiceCredentials, workspac
     },
 
     async disconnect() {
-      if (socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "session.end" }));
-      }
       await cleanup();
     },
   };

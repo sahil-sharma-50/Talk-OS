@@ -12,3 +12,7 @@ The remaining components are grouped by user surface:
 - `ActivityDrawer`, `ActivityTimeline`, artifact navigation, menus, settings, and resize controls provide shared workspace behavior.
 
 Keep state transitions and data operations in `features` when they can be tested independently of React. Components should preserve keyboard access, semantic labels, visible focus, reduced-motion behavior, and responsive containment. Place interaction tests next to the component they exercise.
+
+`LatestExchange` shares transcript-following behavior between user speech and agent captions. Text growth and viewport resizing keep the latest words visible without restarting smooth-scroll animations. Manual scroll-back pauses following; returning to the bottom, pressing End, or using the follow button resumes it. A finalized user turn retains the same transcript viewport.
+
+`Workspace` memoizes its artifact panels and keeps the dashboard navigation callback stable. Voice energy and partial transcript ticks update conversation/status surfaces without re-rendering the open editor; actual workspace changes still update the panels immediately.

@@ -16,13 +16,16 @@ import { documentSections } from "@/features/workspace/document-sections";
 import { portableDocumentMarkdown } from "@/features/workspace/document-embeds";
 import { workspaceForTool } from "./tool-workspace";
 import { executeWorkspaceFileTool, workspaceFileTools } from "./workspace-file-tools";
+import { requestResearch } from "./research-request";
+import { rememberResearchReferences, withResearchReferences } from "./research-references";
 
 export interface ResearchToolCall { type: "tool.call"; call_id: string; name: string; arguments: Record<string, unknown> }
 interface FunctionTool { type: "function"; name: string; description: string; execution_mode: "interactive" | "hold"; timeout_seconds: number; parameters: Record<string, unknown> }
-export interface WorkspaceRuntime { getWorkspace(): WorkspaceSnapshot; setWorkspace(workspace: WorkspaceSnapshot): void; getTavilyApiKey(): string; getCurrentRequest?(): string; getContext?(): { activeView: WorkspaceView; selection: WorkspaceSelection | null }; setActiveView?(view: WorkspaceView): void; setActivityOpen?(open: boolean): void; clearActivity?(): void; downloadFile?(file: { fileName: string; content: string; mimeType: string }): void }
+export interface WorkspaceRuntime { getWorkspace(): WorkspaceSnapshot; setWorkspace(workspace: WorkspaceSnapshot): void; getTavilyApiKey(): string; getCurrentRequest?(): string; getCurrentRequestId?(): string; getContext?(): { activeView: WorkspaceView; selection: WorkspaceSelection | null }; setActiveView?(view: WorkspaceView): void; setActivityOpen?(open: boolean): void; clearActivity?(): void; downloadFile?(file: { fileName: string; content: string; mimeType: string }): void }
 export interface ResearchToolExecution { events: SessionEvent[]; result: Record<string, unknown>; isError?: boolean }
 
-const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []): FunctionTool => ({ type: "function", name, description, execution_mode: "interactive", timeout_seconds: 20, parameters: { type: "object", properties, ...(required.length ? { required } : {}) } });
+const RESEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []): FunctionTool => ({ type: "function", name, description, execution_mode: "interactive", timeout_seconds: ["search_web", "read_sources"].includes(name) ? 60 : 20, parameters: { type: "object", properties, ...(required.length ? { required } : {}) } });
 const artifactId = { type: "string", description: "The exact workspace artifact id." };
 const expectedRevision = { type: "number", description: "The artifact revision returned by the latest read." };
 const cellsSchema = { type: "object", description: "A1 cell addresses mapped to text, numbers, or formulas beginning with =.", additionalProperties: { anyOf: [{ type: "string" }, { type: "number" }] } };
@@ -31,9 +34,9 @@ const plannerTasksSchema = { type: "array", items: { type: "object", properties:
 export const workspaceTools: FunctionTool[] = ([
   ...workspaceControlTools,
   ...workspaceFileTools,
-  tool("get_workspace", "Discover existing files, current selection, sheet columns and revisions when the target is unknown. Explicit tab navigation and new-file creation do not need this lookup.", {}),
+  tool("get_workspace", "Discover existing files, saved research evidence, current selection, sheet columns and revisions when the target is unknown. Explicit tab navigation and new-file creation do not need this lookup.", {}),
   tool("read_document", "Read a document by id. Omit document_id to read the active document.", { document_id: artifactId }),
-  tool("create_document", "Create an editable document and open Documents.", { title: { type: "string" }, content: { type: "string" } }, ["title", "content"]),
+  tool("create_document", "Create a complete editable document and open Documents. For researched deliverables, include supporting Markdown source links in the content. Write the completed document in one call, not a placeholder.", { title: { type: "string" }, content: { type: "string" } }, ["title", "content"]),
   tool("edit_document", "Revision-safe document edit. Cite researched claims with Markdown links.", { document_id: artifactId, expected_revision: expectedRevision, title: { type: "string" }, content: { type: "string" } }, ["document_id", "expected_revision", "content"]),
   tool("create_sheet", "Create a working sheet and open Sheets.", { title: { type: "string" }, cells: cellsSchema }, ["title"]),
   tool("read_sheet", "Read sheet cells, formulas, calculated values, column metadata and revision. Defaults to the first 100 rows; follow next_range for more. Styled empty cells are omitted.", { sheet_id: artifactId, range: { type: "string", description: "Optional bounded range such as A101:Z200; at most 2,600 cells per read." } }, ["sheet_id"]),
@@ -49,14 +52,15 @@ export const workspaceTools: FunctionTool[] = ([
   tool("undo_change", "Undo one coordinated workspace change if none of its artifacts changed again.", { change_id: { type: "string" } }),
   tool("update_task", "Set or revise the objective, constraints, and short visible plan.", { objective: { type: "string" }, constraints: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } } }, ["objective"]),
   tool("search_web", "Search the public web with Tavily. Results stay grouped under this exact query.", { query: { type: "string" } }, ["query"]),
-  tool("read_sources", "Extract the full text of up to eight retrieved source URLs.", { urls: { type: "array", items: { type: "string" }, maxItems: 8 } }, ["urls"]),
-  tool("summarize_research", "Attach a sourced summary to one research collection.", { collection_id: { type: "string" }, summary: { type: "string" }, source_ids: { type: "array", items: { type: "string" } } }, ["collection_id", "summary", "source_ids"]),
+  tool("read_sources", "Extract the full text of up to eight retrieved source URLs. Use only for deep or detail-heavy research when search snippets do not contain enough evidence.", { urls: { type: "array", items: { type: "string" }, maxItems: 8 } }, ["urls"]),
+  tool("summarize_research", "Attach a sourced summary to one research collection. source_ids may reference evidence from any saved research collection; valid evidence is added to the target without removing its existing sources.", { collection_id: { type: "string" }, summary: { type: "string" }, source_ids: { type: "array", items: { type: "string" } } }, ["collection_id", "summary", "source_ids"]),
   tool("export_document", "Download the current document or draft as portable Markdown, including embedded diagram snapshots. The result states whether a browser download started.", { document_id: artifactId }, ["document_id"]),
 ] satisfies FunctionTool[]);
 
 export const LIVE_GREETING = "Hi, I’m Talk OS. What task would you like to work on today?";
 
 export const LIVE_SYSTEM_PROMPT = `You are TalkOS, a general productivity agent that controls a visible workspace through natural conversation.
+For a requested document or other deliverable, put the substance in the artifact and finish with one spoken sentence of at most 20 words identifying what is ready. Do not read or recap the report aloud unless the user explicitly asks for a spoken explanation. Use current_time from the supplied request context when researching current trends. Carry out the complete latest_user_request included in tool results; a successful search is an intermediate step when a PRD or document was also requested.
 Act first on clear commands: call the required tool directly, then speak one concise sentence after success is confirmed. Do not narrate tool selection or say you are about to do a local action. A tab switch needs only open_workspace; creating a new document, sheet, planner or canvas needs only its create tool and automatically opens it. Do not add get_workspace, update_task or open_workspace around those simple creations. Put detailed plans, tables and document contents in the workspace instead of reading them aloud. Give a longer spoken explanation only when asked. For an unclear request, ask one specific question.
 The workspace has Documents, Sheets, Planner, Canvas, Dashboard, Research, and Settings. Honor the workspace the user names: "open my planner and create a shopping list" means a Planner with checklist tasks, never a Sheet. Use create_planner for a new list or read_planner/update_planner to add to an existing list. A shopping/to-do/check list defaults to Planner unless the user asks for a table, sheet, spreadsheet, or budget. Do not let a previous task or the currently open tab override an explicit destination. Inspect it before claiming to know its contents, create a short plan for multi-step work, then do useful work.
 For "open Sheets", "switch to Planner", "show my PRD", or any navigation request, call open_workspace with the requested view and optional exact artifact_id. Opening a tab is an action, not a spoken acknowledgment. Do not create an empty file just to open a tab. Confirm it only after active_view in the successful result matches the request. Settings may be opened, but credentials are never included in workspace context.
@@ -64,7 +68,7 @@ Use Sheets for calculations, Planner for tasks and dates, Documents for delivera
 When one request changes related artifacts, use apply_workspace_changes so the user can undo it as one action. Never invent sources or claim a change succeeded before its result confirms it.
 For Canvas, read the current revision and use stable element ids; commit one completed instruction as one edit. For a sheet dashboard, use create_sheet_dashboard with the actual sheet id, measure_columns letters and category_column letter from metadata. It creates correct bindings, excludes totals and returns resolved values automatically. Use create_dashboard for mixed-source or custom dashboards. For Dashboard, bind every widget to explicitly selected source ids and supported recipes. Read sheet column metadata and samples first; use their actual ranges and labels, including numeric columns outside A/B. Never ask the user for column names that get_workspace or read_sheet already reveals. Ask one short question only if the measure, grouping, target artifact, or desired outcome remains ambiguous. Do not invent budgets or assume every number is money.
 Use get_workspace when you need to discover existing files, resolve a selection or pronoun, or gather sources for a dashboard. Skip it for explicit tab navigation and creating a new artifact that needs no existing source. If an exact target id is already known, read that target directly instead of listing all files again. Read the target's current revision before editing. Resolve pronouns like "this" from fresh workspace context and the conversation; if multiple targets still fit, ask which one and wait. A needs_clarification tool result is a question to ask, not a completed edit.
-The user's request can span multiple tabs and files. Retain the original objective and the artifact ids returned by earlier steps; keep executing until every requested step is done. For a PRD + current marketing research + flow diagram: read the current_time/timezone from get_workspace, search_web and read_sources for current evidence, create/edit the PRD with source links, create a complete connected canvas, then read_document and embed_canvas_in_document using both current revisions and the exact requested section heading. Use insert_document_content to place research or other Markdown at a section without rewriting unrelated content. after_section means after its content and all subsections, before the next peer heading. Missing or duplicated sections require the returned clarification question; never silently append somewhere else.
+The user's request can span multiple tabs and files. Retain the original objective and the artifact ids returned by earlier steps; keep executing until every requested step is done. Search results already contain source-backed snippets: use them directly for ordinary research and call read_sources only when the user asks for deep/detail-heavy research or the snippets lack necessary evidence. For a PRD + current marketing research + flow diagram: read the current_time/timezone from get_workspace, search_web for current evidence, create/edit the PRD with source links, create a complete connected canvas, then read_document and embed_canvas_in_document using both current revisions and the exact requested section heading. Use insert_document_content to place research or other Markdown at a section without rewriting unrelated content. after_section means after its content and all subsections, before the next peer heading. Missing or duplicated sections require the returned clarification question; never silently append somewhere else.
 Canvas embeds are saved visual snapshots inside the document, not links that stand in for a diagram. Keep the original canvas editable. Later canvas edits do not change the PRD automatically. On "refresh that diagram", read_document to get embed_id and the source canvas id, read_canvas for its revision, then embed_canvas_in_document with embed_id and no placement. To move an embedded diagram, include its embed_id plus the new placement and section. Finish by opening the requested deliverable; the embed tool opens the document preview at the inserted diagram. Preserve unsaved drafts and report when an edit was applied to a draft.
 For "import/put/paste my sheet into this document", read_document and read_sheet, then call embed_sheet_in_document with their actual ids and revisions. This inserts a readable table of the sheet's calculated values and formatting, not a link, raw CSV, formula source, or invented summary. Omit range to include the used sheet, or pass the exact requested/selected cell range. Place it at the named section using the same placement rules as diagrams. Resolve the intended sheet/document from get_workspace; ask if multiple candidates remain. Later sheet edits do not automatically change the document. To refresh, read the source sheet's current revision and reuse the embed_id from read_document without placement; the original range is retained. To move a table, reuse embed_id and include the new placement. Keep the source sheet editable and finish in the document preview.
 Use format_document for bold, italic, underline, headings and lists; it can target a unique phrase, the current selection, or scope all. It preserves human drafts. Use format_sheet for cell/column appearance and number formats. Use insert_sheet_rows to insert rows without overwriting data, then update_sheet with the returned revision. Cells accept formulas such as =SUM(B2:B10), =AVERAGE(C2:C8), or =B2*C2. Use rename_artifact for file titles. Use manage_artifact for requested duplication, recoverable deletion, or restoration; save_document for saving a draft; undo_change/redo_change for reversals; control_activity for the sidebar and ledger. Use export_document to start a download and check download_started before claiming it started. open_workspace also selects the document source or preview view. For task names/descriptions/order, read_planner then update_planner with the full ordered list, retaining stable task ids and unrelated details.
@@ -97,8 +101,22 @@ const plannerTasks = (value: unknown, previous: PlannerTask[] = []): PlannerTask
 const commit = (runtime: WorkspaceRuntime, signal: AbortSignal | undefined, workspace: WorkspaceSnapshot) => { if (signal?.aborted) return false; runtime.setWorkspace(workspace); return true; };
 
 export async function executeResearchTool(call: ResearchToolCall, runtime: WorkspaceRuntime, signal?: AbortSignal): Promise<ResearchToolExecution> {
-  const execution = await executeWorkspaceTool(call, runtime, signal);
+  const request = runtime.getCurrentRequest?.();
+  const requestId = runtime.getCurrentRequestId?.();
+  let execution: ResearchToolExecution;
+  try { execution = await executeWorkspaceTool(call, runtime, signal); }
+  catch (error) {
+    if (!["search_web", "read_sources"].includes(call.name)) throw error;
+    const reason = signal?.aborted ? "interrupted" : (error as { name?: string } | null)?.name === "TimeoutError" ? "research_timed_out" : "research_unavailable";
+    execution = failure(call, reason);
+  }
+  if (["search_web", "read_sources"].includes(call.name) && execution.isError && execution.result.error !== "interrupted") {
+    const saved = runtime.getWorkspace().sources.slice(-8);
+    execution.result = { ...execution.result, detail: saved.length ? "This request failed, but earlier research is still available. Use the saved source snippets for the requested deliverable where they provide enough evidence; do not say all research was lost." : "The research service did not return usable results. Explain this specific limitation; do not invent findings.", available_sources: saved.map(({ title, url, snippet }) => ({ title, url, snippet })) };
+  }
+  if (request) execution.result = { ...execution.result, request_context: { latest_user_request: request, current_time: new Date().toISOString() } };
   if (execution.isError || execution.result.status === "needs_clarification" || signal?.aborted) return execution;
+  if (["search_web", "read_sources", "get_workspace"].includes(call.name)) rememberResearchReferences(runtime, request, requestId, call.name, execution.result);
   let view: WorkspaceView | null = workspaceForTool(call.name);
   let artifactId = execution.result.document_id ?? execution.result.sheet_id ?? execution.result.planner_id ?? execution.result.canvas_id ?? execution.result.dashboard_id ?? execution.result.collection_id ?? execution.result.id ?? call.arguments?.artifact_id;
   if (call.name === "rename_artifact" && Object.hasOwn(viewForArtifact, String(call.arguments.kind))) view = viewForArtifact[call.arguments.kind as keyof typeof viewForArtifact];
@@ -139,7 +157,10 @@ async function executeWorkspaceTool(call: ResearchToolCall, runtime: WorkspaceRu
   if (dashboardExecution) return dashboardExecution;
   const workspace = runtime.getWorkspace();
 
-  if (call.name === "get_workspace") return success(call, "Workspace inspected", {
+  if (call.name === "get_workspace") {
+    const selectedResearch = workspace.researchCollections.find(({ id }) => id === workspace.selectedResearchCollectionId);
+    const selectedResearchSources = selectedResearch?.sourceIds.map((sourceId) => workspace.sources.find((source) => source.id === sourceId)).filter((source): source is RetrievedSource => Boolean(source)).sort((left, right) => Date.parse(left.retrievedAt) - Date.parse(right.retrievedAt)).slice(-8) ?? [];
+    return success(call, "Workspace inspected", {
     current_time: new Date().toISOString(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, available_views: workspaceViews,
     context: runtime.getContext?.() ?? null,
     active_document_id: workspace.activeDocumentId, documents: workspace.documents.map(({ id, title, kind, revision }) => ({ id, title, kind, revision })),
@@ -148,9 +169,14 @@ async function executeWorkspaceTool(call: ResearchToolCall, runtime: WorkspaceRu
     active_canvas_id: workspace.activeCanvasId, canvases: workspace.canvases.map(({ id, title, revision, elements }) => ({ id, title, revision, element_count: elements.length })),
     active_dashboard_id: workspace.activeDashboardId, dashboards: workspace.dashboards.map(({ id, title, revision, sources, widgets }) => ({ id, title, revision, source_count: sources.length, widget_count: widgets.length })),
     task: workspace.task, research: workspace.researchCollections.map(({ id, query, summary, sourceIds, status }) => ({ id, query, summary, source_ids: sourceIds, status })),
+    selected_research: selectedResearch ? {
+      id: selectedResearch.id, query: selectedResearch.query, summary: selectedResearch.summary, status: selectedResearch.status,
+      sources: selectedResearchSources.map(({ id, title, url, snippet, content }) => ({ id, title, url, snippet, has_content: Boolean(content) })),
+    } : null,
     trash: workspace.trash.map(({ id, artifactType, artifact }) => ({ trash_id: id, kind: artifactType, artifact_id: artifact.id, title: artifact.title })),
     recent_changes: workspace.changeHistory.slice(-5).map(({ id, label, undone }) => ({ id, label, undone })),
-  });
+    });
+  }
   if (call.name === "read_document") {
     const document = workspace.documents.find((item) => item.id === (text(args, "document_id") || workspace.activeDocumentId));
     if (!document) return failure(call, "document_not_found");
@@ -160,7 +186,7 @@ async function executeWorkspaceTool(call: ResearchToolCall, runtime: WorkspaceRu
     return success(call, `Read ${document.title}`, { id: document.id, title: document.title, content, saved_content: document.content, has_unsaved_draft: dirty, revision: document.revision, sections: documentSections(content).map(({ heading, level }) => ({ heading, level })), embeds: Object.values((dirty ? draft?.embeds : undefined) ?? document.embeds ?? {}).map(embed => ({ id: embed.id, title: embed.title, kind: embed.kind, ...(embed.kind === "sheet" ? { sheet_id: embed.sourceId, sheet_revision: embed.sourceRevision, range: embed.range, whole_sheet: !embed.sourceRange, header_row: embed.headerRow, row_count: embed.rows.length, preview_rows: embed.rows.slice(0, 8).map(row => row.map(cell => cell.text)) } : { canvas_id: embed.sourceId, canvas_revision: embed.sourceRevision }) })) });
   }
   if (call.name === "create_document") {
-    const next = createWorkspaceDocument(workspace, text(args, "title"), normalizeDocumentMarkdown(text(args, "content")), "brief"); if (!commit(runtime, signal, next)) return failure(call, "interrupted"); const document = next.documents.at(-1)!; return success(call, `${document.title} created`, { document_id: document.id, revision: document.revision });
+    const next = createWorkspaceDocument(workspace, text(args, "title"), normalizeDocumentMarkdown(withResearchReferences(text(args, "content"), runtime)), "brief"); if (!commit(runtime, signal, next)) return failure(call, "interrupted"); const document = next.documents.at(-1)!; return success(call, `${document.title} created`, { document_id: document.id, revision: document.revision });
   }
   if (call.name === "edit_document") {
     const result = applyWorkspaceChanges(workspace, `Updated ${text(args, "title") || "document"}`, [{ kind: "document", artifactId: text(args, "document_id"), expectedRevision: args.expected_revision as number, content: normalizeDocumentMarkdown(typeof args.content === "string" ? args.content : ""), title: text(args, "title") || undefined }]);
@@ -222,20 +248,37 @@ async function executeWorkspaceTool(call: ResearchToolCall, runtime: WorkspaceRu
   }
   if (call.name === "search_web") {
     const apiKey = runtime.getTavilyApiKey().trim(); const query = text(args, "query"); if (!query) return failure(call, "query_required");
-    const response = await fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "search", apiKey, query }), signal }); const payload = await response.json() as { error?: string; results?: Array<{ title?: string; url?: string; content?: string }> };
-    if (!response.ok) return failure(call, payload.error ?? "research_unavailable"); if (signal?.aborted) return failure(call, "interrupted");
+    const current = runtime.getWorkspace();
+    const cached = current.researchCollections.find((collection) => collection.status === "complete" && collection.query.toLocaleLowerCase() === query.toLocaleLowerCase());
+    const cachedSources = cached?.sourceIds.map((sourceId) => current.sources.find((source) => source.id === sourceId)).filter((source): source is RetrievedSource => Boolean(source)) ?? [];
+    const cacheIsFresh = cachedSources.length > 0 && cachedSources.every((source) => {
+      const age = Date.now() - Date.parse(source.retrievedAt);
+      return age >= 0 && age < RESEARCH_CACHE_TTL_MS;
+    });
+    if (cached && cacheIsFresh) return success(call, `${cachedSources.length} saved sources found`, { collection_id: cached.id, sources: cachedSources.map(({ id, title, url, snippet }) => ({ id, title, url, snippet })) });
+    const { ok, payload } = await requestResearch({ action: "search", apiKey, query }, signal);
+    if (!ok) return failure(call, payload.error ?? "research_unavailable"); if (signal?.aborted) return failure(call, "interrupted");
     const sources: RetrievedSource[] = (payload.results ?? []).filter((item) => item.url).map((item) => ({ id: `source-${crypto.randomUUID()}`, title: item.title?.trim() || item.url!, url: item.url!, snippet: item.content?.trim() || "", content: "", retrievedAt: new Date().toISOString() }));
-    const next = addRetrievedSources(runtime.getWorkspace(), sources, query); if (!commit(runtime, signal, next)) return failure(call, "interrupted"); return success(call, `${sources.length} sources found`, { collection_id: next.selectedResearchCollectionId, sources: next.sources.filter((source) => sources.some((result) => result.url === source.url)).map(({ id, title, url, snippet }) => ({ id, title, url, snippet })) });
+    const refreshed = addRetrievedSources(runtime.getWorkspace(), sources, cached?.query ?? query);
+    const resultSources = refreshed.sources.filter((source) => sources.some((result) => result.url === source.url));
+    const next = cached && resultSources.length ? { ...refreshed, researchCollections: refreshed.researchCollections.map((collection) => collection.id === cached.id ? { ...collection, sourceIds: resultSources.map(({ id }) => id) } : collection) } : refreshed;
+    if (!commit(runtime, signal, next)) return failure(call, "interrupted"); return success(call, `${sources.length} sources found`, { collection_id: next.selectedResearchCollectionId, sources: resultSources.map(({ id, title, url, snippet }) => ({ id, title, url, snippet })) });
   }
   if (call.name === "read_sources") {
     const apiKey = runtime.getTavilyApiKey().trim(); const urls = strings(args.urls)?.slice(0, 8) ?? []; if (!urls.length) return failure(call, "urls_required");
-    const response = await fetch("/api/research", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "extract", apiKey, urls }), signal }); const payload = await response.json() as { error?: string; results?: Array<{ url: string; raw_content?: string }> };
-    if (!response.ok) return failure(call, payload.error ?? "research_unavailable"); if (signal?.aborted) return failure(call, "interrupted"); const byUrl = new Map((payload.results ?? []).map((item) => [item.url, item.raw_content ?? ""])); const current = runtime.getWorkspace();
+    const { ok, payload } = await requestResearch({ action: "extract", apiKey, urls }, signal);
+    if (!ok) return failure(call, payload.error ?? "research_unavailable"); if (signal?.aborted) return failure(call, "interrupted"); const byUrl = new Map((payload.results ?? []).filter(item => typeof item.url === "string").map((item) => [item.url!, item.raw_content ?? ""])); const current = runtime.getWorkspace();
     const next = { ...current, sources: current.sources.map((source) => byUrl.has(source.url) ? { ...source, content: byUrl.get(source.url)! } : source) }; if (!commit(runtime, signal, next)) return failure(call, "interrupted"); return success(call, `${byUrl.size} sources read`, { sources: [...byUrl].map(([url, content]) => ({ url, content })) });
   }
   if (call.name === "summarize_research") {
-    const id = text(args, "collection_id"); const collection = workspace.researchCollections.find((item) => item.id === id); if (!collection) return failure(call, "research_collection_not_found"); const allowed = new Set(collection.sourceIds); const sourceIds = strings(args.source_ids)?.filter((sourceId) => allowed.has(sourceId)) ?? [];
-    if (!sourceIds.length) return failure(call, "source_ids_required"); const next = { ...workspace, researchCollections: workspace.researchCollections.map((item) => item.id === id ? { ...item, summary: text(args, "summary"), sourceIds } : item) }; if (!commit(runtime, signal, next)) return failure(call, "interrupted"); return success(call, "Research summary added", { collection_id: id, source_ids: sourceIds });
+    const id = text(args, "collection_id"); const collection = workspace.researchCollections.find((item) => item.id === id); if (!collection) return failure(call, "research_collection_not_found");
+    const summary = text(args, "summary"); if (!summary) return failure(call, "summary_required", { detail: "Provide a non-empty sourced summary and retry." });
+    const requestedSourceIds = strings(args.source_ids) ?? []; const availableSourceIds = workspace.sources.map((source) => source.id);
+    if (!requestedSourceIds.length) return failure(call, "source_ids_required", { detail: "Use source_ids returned by search_web or get_workspace and retry.", available_source_ids: availableSourceIds });
+    const available = new Set(availableSourceIds); const invalidSourceIds = [...new Set(requestedSourceIds.filter((sourceId) => !available.has(sourceId)))];
+    if (invalidSourceIds.length) return failure(call, "research_source_ids_invalid", { detail: "Use only source_ids returned by search_web or get_workspace, then retry with the complete summary.", invalid_source_ids: invalidSourceIds, available_source_ids: availableSourceIds });
+    const sourceIds = [...new Set([...collection.sourceIds, ...requestedSourceIds])];
+    const next = { ...workspace, researchCollections: workspace.researchCollections.map((item) => item.id === id ? { ...item, summary, sourceIds } : item) }; if (!commit(runtime, signal, next)) return failure(call, "interrupted"); return success(call, "Research summary added", { collection_id: id, source_ids: sourceIds });
   }
   if (call.name === "export_document") {
     const document = workspace.documents.find((item) => item.id === text(args, "document_id")); if (!document) return failure(call, "document_not_found");

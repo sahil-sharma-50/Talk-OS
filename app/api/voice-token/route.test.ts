@@ -41,11 +41,43 @@ describe("POST /api/voice-token", () => {
       token: "temporary-token",
       agentId: "agent-123",
       expiresInSeconds: 120,
+      region: "us",
     });
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain("https://agents.assemblyai.com/v1/token");
     expect(String(url)).toContain("expires_in_seconds=120");
     expect(options.headers.Authorization).toBe("Bearer server-secret");
+  });
+
+  it("mints European tokens from the matching regional endpoint", async () => {
+    process.env.ASSEMBLYAI_API_KEY = "server-secret";
+    process.env.ASSEMBLYAI_AGENT_ID = "agent-123";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ token: "eu-token" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(new Request("http://localhost/api/voice-token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ region: "eu" }),
+    }));
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe("https://agents.eu.assemblyai.com/v1/token?expires_in_seconds=120&max_session_duration_seconds=600");
+    expect(await response.json()).toMatchObject({ token: "eu-token", region: "eu" });
+  });
+
+  it("rejects an unknown voice region before minting a token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(new Request("http://localhost/api/voice-token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ region: "nearby" }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_region" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses server credentials when a JSON request has no body", async () => {
@@ -65,6 +97,7 @@ describe("POST /api/voice-token", () => {
       token: "temporary-token",
       agentId: "agent-123",
       expiresInSeconds: 120,
+      region: "us",
     });
   });
 
@@ -84,7 +117,7 @@ describe("POST /api/voice-token", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({ token: "temporary-token", agentId: "agent-user", expiresInSeconds: 120 });
+    expect(body).toEqual({ token: "temporary-token", agentId: "agent-user", expiresInSeconds: 120, region: "us" });
     expect(JSON.stringify(body)).not.toContain("user-secret");
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer user-secret");
   });

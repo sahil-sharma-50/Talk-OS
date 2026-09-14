@@ -846,7 +846,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 @media print { .document-sheet__scroll { overflow: visible; }.document-sheet th, .document-sheet td { min-width: 0; padding: 6px; }.document-sheet tr { break-inside: avoid; } }
 .voice-panel .latest-exchange { border: 0; background: transparent; padding: 4px 26px 24px; max-height: min(40vh, 320px); gap: 16px; overflow: hidden; }
 .voice-panel .exchange-message { width: 100%; max-width: 100%; padding: 0; border-radius: 0; background: none; align-self: stretch; }
-.voice-panel .exchange-message[data-speaker="user"] { flex: 0 0 auto; max-height: 112px; overflow-y: auto; color: var(--muted); }
+.voice-panel .exchange-message[data-speaker="user"] { flex: 0 0 auto; max-height: 112px; overflow-y: auto; overscroll-behavior: contain; color: var(--muted); }
 .voice-panel .exchange-message[data-speaker="user"] p { font-size: var(--type-label); }
 .voice-panel .exchange-message[data-speaker="agent"] p { font-size: 16px; line-height: 1.7; }
 .voice-panel .exchange-message[data-speaker="agent"] { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

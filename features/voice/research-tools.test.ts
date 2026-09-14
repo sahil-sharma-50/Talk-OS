@@ -207,6 +207,182 @@ describe("TalkOS AssemblyAI client tools", () => {
     vi.unstubAllGlobals();
   });
 
+  it("reuses already-visible results for an identical search without another network wait", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ results: [{ title: "Market evidence", url: "https://example.com/market", content: "Audience evidence" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { runtime } = createRuntime("tvly-test");
+    const first = await executeResearchTool({ type: "tool.call", call_id: "first", name: "search_web", arguments: { query: "social app audience" } }, runtime);
+
+    const repeated = await executeResearchTool({ type: "tool.call", call_id: "repeat", name: "search_web", arguments: { query: "social app audience" } }, runtime);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(repeated.result).toEqual(first.result);
+    vi.unstubAllGlobals();
+  });
+
+  it("refreshes an identical search after the saved evidence becomes stale", async () => {
+    let index = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      index += 1;
+      return new Response(JSON.stringify({ results: [{ title: `Evidence ${index}`, url: `https://example.com/${index}`, content: `Version ${index}` }] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { runtime } = createRuntime("tvly-test");
+    await executeResearchTool({ type: "tool.call", call_id: "first", name: "search_web", arguments: { query: "current social app audience" } }, runtime);
+    const saved = runtime.getWorkspace();
+    runtime.setWorkspace({ ...saved, sources: saved.sources.map(source => ({ ...source, retrievedAt: "2020-01-01T00:00:00.000Z" })) });
+
+    const refreshed = await executeResearchTool({ type: "tool.call", call_id: "refresh", name: "search_web", arguments: { query: "current social app audience" } }, runtime);
+    const immediateRepeat = await executeResearchTool({ type: "tool.call", call_id: "repeat", name: "search_web", arguments: { query: "current social app audience" } }, runtime);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshed.result.sources).toEqual([expect.objectContaining({ title: "Evidence 2" })]);
+    expect(immediateRepeat.result).toEqual(refreshed.result);
+    vi.unstubAllGlobals();
+  });
+
+  it("treats query capitalization as the same refreshable research collection", async () => {
+    let index = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      index += 1;
+      return new Response(JSON.stringify({ results: [{ title: `Evidence ${index}`, url: `https://example.com/${index}`, content: `Version ${index}` }] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { runtime, workspace } = createRuntime("tvly-test");
+    await executeResearchTool({ type: "tool.call", call_id: "first", name: "search_web", arguments: { query: "Social App Audience" } }, runtime);
+    const saved = runtime.getWorkspace();
+    runtime.setWorkspace({ ...saved, sources: saved.sources.map(source => ({ ...source, retrievedAt: "2020-01-01T00:00:00.000Z" })) });
+
+    const refreshed = await executeResearchTool({ type: "tool.call", call_id: "refresh", name: "search_web", arguments: { query: "social app audience" } }, runtime);
+    const repeated = await executeResearchTool({ type: "tool.call", call_id: "repeat", name: "search_web", arguments: { query: "SOCIAL APP AUDIENCE" } }, runtime);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(workspace().researchCollections).toHaveLength(1);
+    expect(repeated.result).toEqual(refreshed.result);
+    vi.unstubAllGlobals();
+  });
+
+  it("exposes saved research evidence to a later workspace lookup", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [{ title: "Social app trends", url: "https://example.com/trends", content: "Young adults prefer smaller interest-led communities." }] }), { status: 200 })));
+    const { runtime } = createRuntime("tvly-test");
+    await executeResearchTool({ type: "tool.call", call_id: "search", name: "search_web", arguments: { query: "social media app target audience" } }, runtime);
+
+    const lookup = await executeResearchTool({ type: "tool.call", call_id: "lookup", name: "get_workspace", arguments: {} }, runtime);
+
+    expect(lookup.result.research).toEqual([expect.objectContaining({ query: "social media app target audience" })]);
+    expect(lookup.result.selected_research).toEqual(expect.objectContaining({
+      query: "social media app target audience",
+      sources: [{
+          id: expect.any(String),
+          title: "Social app trends",
+          url: "https://example.com/trends",
+          snippet: "Young adults prefer smaller interest-led communities.",
+          has_content: false,
+      }],
+    }));
+    vi.unstubAllGlobals();
+  });
+
+  it("bounds later research context to the eight most recent saved sources", async () => {
+    const { runtime } = createRuntime("tvly-test");
+    const saved = runtime.getWorkspace();
+    const sources = Array.from({ length: 9 }, (_, index) => ({ id: `source-${index + 1}`, title: `Source ${index + 1}`, url: `https://example.com/${index + 1}`, snippet: `Evidence ${index + 1}`, content: "", retrievedAt: new Date(Date.UTC(2026, 8, 14, 12, index)).toISOString() }));
+    runtime.setWorkspace({
+      ...saved,
+      sources,
+      researchCollections: [{ id: "research-market", query: "social app market", summary: "", sourceIds: sources.map(source => source.id), status: "complete", createdAt: "2026-09-14T12:00:00.000Z" }],
+      selectedResearchCollectionId: "research-market",
+      selectedSourceId: "source-9",
+    });
+
+    const lookup = await executeResearchTool({ type: "tool.call", call_id: "lookup", name: "get_workspace", arguments: {} }, runtime);
+
+    expect((lookup.result.selected_research as { sources: Array<{ title: string }> }).sources.map(source => source.title)).toEqual([
+      "Source 2", "Source 3", "Source 4", "Source 5", "Source 6", "Source 7", "Source 8", "Source 9",
+    ]);
+    expect((lookup.result.research as Array<Record<string, unknown>>)[0]).not.toHaveProperty("sources");
+  });
+
+  it("accepts valid workspace evidence from another search collection when compiling a summary", async () => {
+    const { runtime, workspace } = createRuntime();
+    const saved = workspace();
+    runtime.setWorkspace({
+      ...saved,
+      sources: [
+        { id: "source-market", title: "Market", url: "https://example.com/market", snippet: "Market evidence", content: "", retrievedAt: "2026-09-14T12:00:00.000Z" },
+        { id: "source-audience", title: "Audience", url: "https://example.com/audience", snippet: "Audience evidence", content: "", retrievedAt: "2026-09-14T12:01:00.000Z" },
+      ],
+      researchCollections: [
+        { id: "research-market", query: "Android social app market", summary: "", sourceIds: ["source-market"], status: "complete", createdAt: "2026-09-14T12:00:00.000Z" },
+        { id: "research-audience", query: "Android social app audience", summary: "", sourceIds: ["source-audience"], status: "complete", createdAt: "2026-09-14T12:01:00.000Z" },
+      ],
+      selectedResearchCollectionId: "research-audience",
+      selectedSourceId: "source-audience",
+    });
+
+    const execution = await executeResearchTool({ type: "tool.call", call_id: "summary", name: "summarize_research", arguments: {
+      collection_id: "research-market",
+      summary: "The audience evidence shapes the recommended market direction.",
+      source_ids: ["source-audience"],
+    } }, runtime);
+
+    expect(execution.isError).toBeUndefined();
+    expect(execution.result).toMatchObject({ collection_id: "research-market", source_ids: ["source-market", "source-audience"] });
+    expect(workspace().researchCollections[0]).toMatchObject({
+      summary: "The audience evidence shapes the recommended market direction.",
+      sourceIds: ["source-market", "source-audience"],
+    });
+  });
+
+  it("rejects unknown research source ids without partially updating the collection", async () => {
+    const { runtime, workspace } = createRuntime();
+    const saved = workspace();
+    runtime.setWorkspace({
+      ...saved,
+      sources: [{ id: "source-market", title: "Market", url: "https://example.com/market", snippet: "Market evidence", content: "", retrievedAt: "2026-09-14T12:00:00.000Z" }],
+      researchCollections: [{ id: "research-market", query: "Android social app market", summary: "Earlier summary", sourceIds: ["source-market"], status: "complete", createdAt: "2026-09-14T12:00:00.000Z" }],
+      selectedResearchCollectionId: "research-market",
+      selectedSourceId: "source-market",
+    });
+    const before = workspace();
+
+    const execution = await executeResearchTool({ type: "tool.call", call_id: "summary", name: "summarize_research", arguments: {
+      collection_id: "research-market",
+      summary: "Replacement summary",
+      source_ids: ["source-market", "source-missing"],
+    } }, runtime);
+
+    expect(execution).toMatchObject({ isError: true, result: {
+      error: "research_source_ids_invalid",
+      invalid_source_ids: ["source-missing"],
+      available_source_ids: ["source-market"],
+      detail: expect.any(String),
+    } });
+    expect(workspace()).toBe(before);
+  });
+
+  it("rejects an empty research summary with retry guidance", async () => {
+    const { runtime, workspace } = createRuntime();
+    const saved = workspace();
+    runtime.setWorkspace({
+      ...saved,
+      sources: [{ id: "source-market", title: "Market", url: "https://example.com/market", snippet: "Market evidence", content: "", retrievedAt: "2026-09-14T12:00:00.000Z" }],
+      researchCollections: [{ id: "research-market", query: "Android social app market", summary: "Earlier summary", sourceIds: ["source-market"], status: "complete", createdAt: "2026-09-14T12:00:00.000Z" }],
+      selectedResearchCollectionId: "research-market",
+      selectedSourceId: "source-market",
+    });
+    const before = workspace();
+
+    const execution = await executeResearchTool({ type: "tool.call", call_id: "summary", name: "summarize_research", arguments: {
+      collection_id: "research-market",
+      summary: "   ",
+      source_ids: ["source-market"],
+    } }, runtime);
+
+    expect(execution).toMatchObject({ isError: true, result: { error: "summary_required", detail: expect.any(String) } });
+    expect(workspace()).toBe(before);
+  });
+
   it("does not commit research results after interruption", async () => {
     const controller = new AbortController();
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => { controller.abort(); return new Response(JSON.stringify({ results: [{ title: "Late", url: "https://example.com/late", content: "Old request" }] }), { status: 200 }); }));

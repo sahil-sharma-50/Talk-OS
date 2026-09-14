@@ -6,7 +6,7 @@ const SESSION_LIMIT_SECONDS = 600;
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) return NextResponse.json({ error: "origin_not_allowed" }, { status: 403 });
-  let supplied: { apiKey?: unknown; agentId?: unknown } = {};
+  let supplied: { apiKey?: unknown; agentId?: unknown; region?: unknown } = {};
   try {
     if (request.headers.get("content-type")?.includes("application/json")) {
       const body = await request.text();
@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
   }
   if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
+  if (supplied.region !== undefined && supplied.region !== "us" && supplied.region !== "eu") return NextResponse.json({ error: "invalid_region" }, { status: 400 });
+  const region = supplied.region === "eu" ? "eu" : "us";
   const suppliedKey = typeof supplied.apiKey === "string" ? supplied.apiKey.trim() : "";
   const suppliedAgent = typeof supplied.agentId === "string" ? supplied.agentId.trim() : "";
   if (Boolean(suppliedKey) !== Boolean(suppliedAgent)) return NextResponse.json({ error: "invalid_credentials" }, { status: 400 });
@@ -31,7 +33,8 @@ export async function POST(request: Request) {
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
-  const url = new URL("https://agents.assemblyai.com/v1/token");
+  const voiceHost = region === "eu" ? "agents.eu.assemblyai.com" : "agents.assemblyai.com";
+  const url = new URL(`https://${voiceHost}/v1/token`);
   url.searchParams.set("expires_in_seconds", String(TOKEN_TTL_SECONDS));
   url.searchParams.set("max_session_duration_seconds", String(SESSION_LIMIT_SECONDS));
 
@@ -52,6 +55,7 @@ export async function POST(request: Request) {
       token: data.token,
       agentId,
       expiresInSeconds: TOKEN_TTL_SECONDS,
+      region,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "voice_unavailable" }, { status: 502 });

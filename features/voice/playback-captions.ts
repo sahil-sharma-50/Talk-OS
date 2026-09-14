@@ -9,6 +9,7 @@ export class TimedReplyCaptions {
   private words: Word[] = [];
   private chunks: AudioChunk[] = [];
   private text = "";
+  private transcript = "";
   private duration = 0;
   private done = false;
 
@@ -33,6 +34,13 @@ export class TimedReplyCaptions {
     this.duration += duration;
   }
 
+  /** The public Voice Agent protocol guarantees a final transcript but does
+   * not guarantee word timestamps. Pace that text over the PCM duration so a
+   * buffered response never appears on screen before it is heard. */
+  setText(text: string) {
+    this.transcript = text.trim();
+  }
+
   finish() { this.done = true; }
 
   finished(now: number) {
@@ -41,13 +49,35 @@ export class TimedReplyCaptions {
   }
 
   sample(now: number): SpeechCaption | null {
-    if (!this.words.length) return null;
+    const words = this.words.length ? this.words : this.fallbackWords();
+    const fullText = this.words.length ? this.text : this.transcript;
+    if (!words.length) return null;
     const chunk = this.chunks.findLast(item => now >= item.at);
     // No reveal until this reply's audio actually reaches the output device.
     const playedMs = chunk ? (chunk.offset + Math.min(now - chunk.at, chunk.duration)) * 1000 : -1;
-    const word = this.words.findLast(item => item.start <= playedMs);
-    const text = word ? this.text.slice(0, word.to) : "";
+    const word = words.findLast(item => item.start <= playedMs);
+    const text = word ? fullText.slice(0, word.to) : "";
     const active = word && playedMs < word.end;
     return { turnId: this.turnId, text, activeStart: active ? word.from : text.length, activeEnd: text.length };
+  }
+
+  private fallbackWords(): Word[] {
+    if (!this.transcript || this.duration <= 0) return [];
+    const matches = [...this.transcript.matchAll(/\S+/g)];
+    const totalWeight = matches.reduce((sum, match) => sum + match[0].length + 1, 0);
+    const durationMs = this.duration * 1000;
+    let elapsedWeight = 0;
+    return matches.map((match) => {
+      const weight = match[0].length + 1;
+      const start = durationMs * elapsedWeight / totalWeight;
+      elapsedWeight += weight;
+      return {
+        text: match[0],
+        start,
+        end: durationMs * elapsedWeight / totalWeight,
+        from: match.index,
+        to: match.index + match[0].length,
+      };
+    });
   }
 }

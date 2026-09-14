@@ -12,12 +12,19 @@ async function playbackSession() {
   class Socket extends EventTarget { readyState = 1; send = vi.fn(); close = vi.fn(); }
   const socket = new Socket();
   const nodes: Array<{ onended: (() => void) | null; stop: ReturnType<typeof vi.fn> }> = [];
+  const workletPort: { onmessage: ((event: MessageEvent<ArrayBuffer>) => void) | null } = { onmessage: null };
+  const mediaTrack = { stop: vi.fn(), enabled: true };
   const context = {
-    currentTime: 10, state: "running", resume: vi.fn(), close: vi.fn(), destination: {},
+    currentTime: 10, state: "running", sampleRate: 48000, resume: vi.fn(async () => {}), close: vi.fn(), destination: {},
+    suspend: vi.fn(async () => {}),
+    audioWorklet: { addModule: vi.fn() },
+    createMediaStreamSource: () => ({ connect: vi.fn(), disconnect: vi.fn() }),
     createBuffer: (_: number, length: number, rate: number) => ({ duration: length / rate, getChannelData: () => new Float32Array(length) }),
     createBufferSource: () => { const node = { onended: null, stop: vi.fn(), connect: vi.fn(), start: vi.fn(), buffer: null }; nodes.push(node); return node; },
   };
   vi.stubGlobal("AudioContext", class { constructor() { return context; } });
+  vi.stubGlobal("AudioWorkletNode", class { port = workletPort; connect = vi.fn(); disconnect = vi.fn(); });
+  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [mediaTrack], getAudioTracks: () => [mediaTrack] })) } });
   vi.stubGlobal("WebSocket", class { static OPEN = 1; constructor() { return socket; } });
   vi.stubGlobal("fetch", async () => Response.json({ token: "test" }));
   let state = initialSessionState;
@@ -30,14 +37,125 @@ async function playbackSession() {
   const receive = (message: unknown) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
   receive({ type: "session.ready" });
   return {
-    adapter, nodes, receive, navigate, state: () => state, telemetry: () => telemetry,
+    adapter, nodes, receive, navigate, context, state: () => state, telemetry: () => telemetry,
     sent: () => socket.send.mock.calls.map(([data]) => JSON.parse(data)),
     tick: (time: number) => { context.currentTime = time; vi.advanceTimersByTime(50); },
+    pushMic: (level: number) => {
+      const frame = new Int16Array(480);
+      frame.fill(Math.round(level * 32767));
+      workletPort.onmessage?.(new MessageEvent("message", { data: frame.buffer }));
+    },
     audio: (id: string, seconds: number) => receive({ type: "reply.audio", reply_id: id, data: btoa("\xff\x1f".repeat(seconds * 24000)) }),
     silence: (id: string, seconds: number) => receive({ type: "reply.audio", reply_id: id, data: btoa("\0".repeat(seconds * 48000)) }),
     word: (id: string, delta: string, start_ms: number, end_ms: number) => receive({ type: "transcript.agent.delta", reply_id: id, delta, start_ms, end_ms }),
   };
 }
+
+it("holds a completed tool across an older boundary until the newest reply ends", async () => {
+  const s = await playbackSession();
+  try {
+    s.receive({ type: "transcript.user", item_id: "research", text: "Research this market." });
+    s.receive({ type: "reply.started", reply_id: "tool-owner" });
+    s.receive({ type: "tool.call", call_id: "read-workspace", name: "get_workspace", arguments: {} });
+    await vi.advanceTimersByTimeAsync(0);
+    s.receive({ type: "reply.started", reply_id: "speculative" });
+    s.receive({ type: "reply.done", reply_id: "tool-owner", status: "completed" });
+    expect(s.sent().filter(message => message.call_id === "read-workspace")).toHaveLength(0);
+    s.receive({ type: "reply.done", reply_id: "speculative", status: "completed" });
+    expect(s.sent()).toContainEqual(expect.objectContaining({ type: "tool.result", call_id: "read-workspace" }));
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("leaves Thinking after the final transcript even if reply.done is lost", async () => {
+  const s = await playbackSession();
+  try {
+    s.receive({ type: "reply.started", reply_id: "missing-boundary" });
+    s.audio("missing-boundary", 1);
+    s.tick(10.2);
+    s.receive({ type: "transcript.agent", reply_id: "missing-boundary", text: "The task is complete." });
+    s.tick(11.1);
+    s.nodes[0].onended?.();
+
+    expect(s.state().voiceState).toBe("listening");
+    expect(s.state().speechCaption).toBeNull();
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("reports a stalled connection with a recovery action instead of silently discarding the reply", async () => {
+  const s = await playbackSession();
+  try {
+    s.receive({ type: "reply.started", reply_id: "stalled" });
+    expect(s.state().voiceState).toBe("thinking");
+
+    await vi.advanceTimersByTimeAsync(15_100);
+    expect(s.state().voiceState).toBe("thinking");
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(s.state().voiceState).toBe("error");
+    expect(s.state().error).toMatch(/reconnect/i);
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("pauses playback on local speech but cancels work only after server confirmation", async () => {
+  const s = await playbackSession();
+  try {
+    await s.adapter.startListening();
+    s.receive({ type: "reply.started", reply_id: "speaking" });
+    s.audio("speaking", 2);
+    s.tick(10.2);
+
+    for (let frame = 0; frame < 8; frame += 1) s.pushMic(.01);
+    expect(s.nodes[0].stop).not.toHaveBeenCalled();
+    for (let frame = 0; frame < 5; frame += 1) s.pushMic(.12);
+
+    expect(s.context.suspend).toHaveBeenCalledTimes(1);
+    expect(s.nodes[0].stop).not.toHaveBeenCalled();
+    expect(s.state().voiceState).toBe("listening");
+    s.receive({ type: "input.speech.started" });
+    expect(s.nodes[0].stop).toHaveBeenCalledTimes(1);
+    s.receive({ type: "input.speech.stopped" });
+    s.receive({ type: "transcript.user", item_id: "redirect", text: "Use my other document" });
+    s.receive({ type: "reply.started", reply_id: "new" }); s.audio("new", 1);
+    expect(s.nodes).toHaveLength(2);
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("resumes the same playback after an unconfirmed local noise candidate", async () => {
+  const s = await playbackSession();
+  try {
+    await s.adapter.startListening();
+    s.receive({ type: "reply.started", reply_id: "answer" }); s.audio("answer", 2); s.tick(10.1);
+    for (let i = 0; i < 5; i++) s.pushMic(.12);
+    s.context.resume.mockClear();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(s.context.resume).toHaveBeenCalled();
+    expect(s.nodes[0].stop).not.toHaveBeenCalled();
+    expect(s.state().voiceState).toBe("speaking");
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("does not expose untimed transcript deltas ahead of buffered audio", async () => {
+  const s = await playbackSession();
+  try {
+    s.receive({ type: "reply.started", reply_id: "untimed" });
+    s.receive({ type: "transcript.agent.delta", reply_id: "untimed", delta: "An entire answer arrives early", start_ms: null, end_ms: null });
+    s.audio("untimed", 3);
+    s.tick(10.1);
+    // An empty playback caption intentionally masks raw network text in UI.
+    expect(s.state().speechCaption).toMatchObject({ turnId: "agent-untimed", text: "" });
+  } finally { await s.adapter.disconnect(); }
+});
+
+it("keeps a continued request together when queued transcript words have not been spoken", async () => {
+  const s = await playbackSession();
+  try {
+    s.receive({ type: "transcript.user", item_id: "research", text: "Research an Android app like Instagram" });
+    s.receive({ type: "reply.started", reply_id: "early" });
+    s.word("early", "Certainly", 0, 1000);
+    s.receive({ type: "transcript.user", item_id: "prd", text: "and put that research into a PRD." });
+    expect(s.state().turns.filter(turn => turn.speaker === "user")).toHaveLength(1);
+    expect(s.state().turns.at(-1)?.text).toBe("Research an Android app like Instagram and put that research into a PRD.");
+  } finally { await s.adapter.disconnect(); }
+});
 
 it("does not report silent provider audio as a spoken response and includes the playback queue", async () => {
   const s = await playbackSession();
@@ -329,7 +447,8 @@ it.each([true, false])("does not revive an older completed tool response after t
     s.receive({ type: "tool.call", call_id: "finished", name: "open_workspace", arguments: { view: isError ? "invalid" : "documents" } });
     s.receive({ type: "reply.done", status: "completed" });
     await vi.advanceTimersByTimeAsync(0);
-    expect(s.sent().find(m => m.call_id === "finished")).toMatchObject({ is_error: isError });
+    const result = JSON.parse(String(s.sent().find(m => m.call_id === "finished")?.result));
+    expect(Object.hasOwn(result, "error")).toBe(isError);
     s.receive({ type: "reply.started", reply_id: "old-tool-reply" }); s.silence("old-tool-reply", 1);
     s.receive({ type: "input.speech.started" });
     s.receive({ type: "transcript.user", item_id: "new", text: "Thanks." });
@@ -356,7 +475,7 @@ it("keeps current tool failures and multi-tool continuations audible", async () 
       s.receive({ type: "reply.done", reply_id: `result-${id}`, status: "completed" });
     }
     expect(s.nodes).toHaveLength(2);
-    expect(s.sent().filter(m => m.type === "tool.result").map(m => m.is_error)).toEqual([true, false]);
+    expect(s.sent().filter(m => m.type === "tool.result").map(m => Object.hasOwn(JSON.parse(String(m.result)), "error"))).toEqual([true, false]);
   } finally { await s.adapter.disconnect(); }
 });
 
